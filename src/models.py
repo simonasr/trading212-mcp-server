@@ -393,11 +393,13 @@ class PaginatedResponseHistoryTransactionItem(BaseModel):
 
 class PieRequest(BaseModel):
     dividendCashAction: Optional[DividendCashActionEnum] = Field(
-        description="How dividends are handled", 
-        examples=[DividendCashActionEnum.REINVEST, DividendCashActionEnum.TO_ACCOUNT_CASH]
+        description="How dividends are handled",
+        examples=[DividendCashActionEnum.REINVEST,
+                  DividendCashActionEnum.TO_ACCOUNT_CASH]
     )
     endDate: Optional[datetime] = Field(format="date-time")
-    goal: Optional[float] = Field(description="Total desired value of the pie in account currency")
+    goal: Optional[float] = Field(
+        description="Total desired value of the pie in account currency")
     icon: Optional[str] = Field()
     instrumentShares: Optional[Dict[str, float]] = Field(
         examples=[{"AAPL_US_EQ": 0.5, "MSFT_US_EQ": 0.5}],
