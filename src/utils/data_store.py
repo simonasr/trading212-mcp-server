@@ -32,6 +32,12 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+# Order statuses that are considered final/immutable
+# Orders in these states should not be overwritten by API updates
+IMMUTABLE_ORDER_STATUSES: frozenset[str] = frozenset(
+    {"FILLED", "CANCELLED", "REJECTED"}
+)
+
 
 @dataclass
 class SyncResult:
@@ -192,6 +198,43 @@ class HistoricalDataStore:
                 logger.warning("Skipping order without ID")
                 continue
 
+            # Extract values from nested structure
+            order_details = order.order
+            fill_details = order.fill
+
+            # Get the new status from API
+            new_status = (
+                order_details.status.value
+                if order_details and order_details.status
+                else None
+            )
+
+            # Check if existing record has immutable status (immutability guard)
+            existing = conn.execute(
+                "SELECT status FROM orders WHERE id = ? AND account_id = ?",
+                (order.id, self.account_id),
+            ).fetchone()
+
+            if existing:
+                existing_status = existing["status"]
+                if existing_status in IMMUTABLE_ORDER_STATUSES:
+                    # Log discrepancy if status changed for immutable record
+                    if existing_status != new_status:
+                        logger.warning(
+                            "Discrepancy detected: order %s has immutable status '%s' "
+                            "but API returned '%s' - keeping cached version",
+                            order.id,
+                            existing_status,
+                            new_status,
+                        )
+                    else:
+                        logger.debug(
+                            "Order %s already cached with immutable status '%s', skipping",
+                            order.id,
+                            existing_status,
+                        )
+                    continue  # Skip update for immutable records
+
             # Extract taxes from fill.walletImpact if present
             taxes_json = None
             if order.fill and order.fill.walletImpact and order.fill.walletImpact.taxes:
@@ -200,10 +243,6 @@ class HistoricalDataStore:
                 )
 
             raw_json = order.model_dump_json()
-
-            # Extract values from nested structure
-            order_details = order.order
-            fill_details = order.fill
 
             try:
                 conn.execute(
@@ -223,9 +262,7 @@ class HistoricalDataStore:
                         order_details.type.value
                         if order_details and order_details.type
                         else None,
-                        order_details.status.value
-                        if order_details and order_details.status
-                        else None,
+                        new_status,
                         order_details.initiatedFrom.value
                         if order_details and order_details.initiatedFrom
                         else None,

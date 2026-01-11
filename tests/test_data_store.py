@@ -233,6 +233,123 @@ class TestOrderOperations:
         assert orders == []
 
 
+class TestImmutabilityGuard:
+    """Tests for the immutability guard on order updates."""
+
+    def test_immutable_order_not_overwritten(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Orders with immutable status should not be overwritten."""
+        # Insert a FILLED order
+        filled_order = make_test_order(
+            order_id=2001,
+            ticker="AAPL_US_EQ",
+            status=HistoricalOrderStatusEnum.FILLED,
+            fill_price=150.00,
+        )
+        data_store._upsert_orders([filled_order])
+
+        # Try to update with different data
+        updated_order = make_test_order(
+            order_id=2001,
+            ticker="AAPL_US_EQ",
+            status=HistoricalOrderStatusEnum.FILLED,
+            fill_price=999.99,  # Different price
+        )
+        count = data_store._upsert_orders([updated_order])
+
+        # Should not have inserted (immutable record skipped)
+        assert count == 0
+
+        # Original data should be preserved
+        orders = data_store.get_orders()
+        assert len(orders) == 1
+        assert orders[0].fillPrice == 150.00  # Original price preserved
+
+    def test_immutable_cancelled_order_not_overwritten(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Cancelled orders should also be immutable."""
+        cancelled_order = make_test_order(
+            order_id=2002,
+            ticker="MSFT_US_EQ",
+            status=HistoricalOrderStatusEnum.CANCELLED,
+            fill_price=None,
+        )
+        data_store._upsert_orders([cancelled_order])
+
+        # Try to update status
+        changed_order = make_test_order(
+            order_id=2002,
+            ticker="MSFT_US_EQ",
+            status=HistoricalOrderStatusEnum.FILLED,  # Changed status!
+            fill_price=200.00,
+        )
+        count = data_store._upsert_orders([changed_order])
+
+        assert count == 0  # Should be rejected
+
+        # Check status was not changed
+        orders = data_store.get_orders()
+        assert len(orders) == 1
+        assert orders[0].status == HistoricalOrderStatusEnum.CANCELLED
+
+    def test_non_immutable_order_can_be_updated(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Orders with non-immutable status can be updated."""
+        # Insert a NEW order (not immutable)
+        new_order = make_test_order(
+            order_id=2003,
+            ticker="GOOG_US_EQ",
+            status=HistoricalOrderStatusEnum.NEW,
+            fill_price=None,
+        )
+        data_store._upsert_orders([new_order])
+
+        # Update to FILLED
+        filled_order = make_test_order(
+            order_id=2003,
+            ticker="GOOG_US_EQ",
+            status=HistoricalOrderStatusEnum.FILLED,
+            fill_price=100.00,
+        )
+        count = data_store._upsert_orders([filled_order])
+
+        assert count == 1  # Should update
+
+        orders = data_store.get_orders()
+        assert len(orders) == 1
+        assert orders[0].status == HistoricalOrderStatusEnum.FILLED
+        assert orders[0].fillPrice == 100.00
+
+    def test_discrepancy_logged_for_status_mismatch(
+        self, data_store: HistoricalDataStore, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Should log warning when API returns different status for immutable order."""
+        import logging
+
+        # Insert a FILLED order
+        filled_order = make_test_order(
+            order_id=2004,
+            status=HistoricalOrderStatusEnum.FILLED,
+        )
+        data_store._upsert_orders([filled_order])
+
+        # Try to update with CANCELLED status
+        with caplog.at_level(logging.WARNING):
+            changed_order = make_test_order(
+                order_id=2004,
+                status=HistoricalOrderStatusEnum.CANCELLED,
+            )
+            data_store._upsert_orders([changed_order])
+
+        # Check that discrepancy was logged
+        assert "Discrepancy detected" in caplog.text
+        assert "FILLED" in caplog.text
+        assert "CANCELLED" in caplog.text
+
+
 class TestDividendOperations:
     """Tests for dividend cache operations."""
 
