@@ -287,28 +287,28 @@ clear_cache(table="dividends")
 
 ## Development
 
-### Install Dev Dependencies
+A `Makefile` is provided for common development tasks:
 
 ```bash
-uv sync --dev
+make dev          # Install all dependencies (including dev)
+make check        # Run all checks (lint, format, typecheck, test)
+make test         # Run tests
+make lint         # Run linter
+make format       # Auto-format code
+make typecheck    # Run type checker
+make clean        # Remove cache files
 ```
 
-### Run Tests
+### Manual Commands
+
+If you prefer not to use `make`:
 
 ```bash
-uv run pytest
-```
-
-### Run Linter
-
-```bash
-uv run ruff check src tests
-```
-
-### Run Type Checker
-
-```bash
-uv run mypy src
+uv sync --all-extras              # Install dev dependencies
+uv run pytest                     # Run tests
+uv run ruff check src tests       # Lint
+uv run ruff format src tests      # Format
+uv run mypy src                   # Type check
 ```
 
 ## License
