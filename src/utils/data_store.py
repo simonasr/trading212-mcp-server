@@ -335,61 +335,64 @@ class HistoricalDataStore:
                 error="Cache is disabled",
             )
 
-        try:
-            # Fetch all orders from API (paginated)
-            all_orders: list[HistoricalOrder] = []
-            cursor: int | None = None
+        # Fetch all orders from API (paginated)
+        all_orders: list[HistoricalOrder] = []
+        cursor: int | None = None
+        pagination_error: str | None = None
 
-            while True:
+        while True:
+            try:
                 response = api_client.get_historical_order_data(
                     cursor=cursor,
                     limit=8,  # Trading212 bug: limit > 8 causes 500 errors
                 )
-                if not response.items:
-                    break
+            except Exception as e:
+                # Log pagination error but continue with what we have
+                logger.warning(f"Orders pagination stopped due to error: {e}")
+                pagination_error = f"Pagination stopped: {e}"
+                break
 
-                all_orders.extend(response.items)
+            if not response.items:
+                break
 
-                # Check for next page using nextPagePath (like dividends)
-                if not response.nextPagePath:
-                    break
+            all_orders.extend(response.items)
 
-                # Extract cursor from nextPagePath
-                # Format: /api/v0/equity/history/orders?cursor=123&limit=8
-                import httpx
+            # Check for next page using nextPagePath (like dividends)
+            if not response.nextPagePath:
+                break
 
-                parsed = httpx.URL(response.nextPagePath)
-                cursor_str = parsed.params.get("cursor")
-                if cursor_str:
-                    cursor = int(cursor_str)
-                else:
-                    break
+            # Extract cursor from nextPagePath
+            # Format: /api/v0/equity/history/orders?cursor=123&limit=8
+            from urllib.parse import parse_qs, urlparse
 
-            # Upsert into local cache
-            added = self._upsert_orders(all_orders)
+            next_path = response.nextPagePath
+            if next_path.startswith("/"):
+                parsed = urlparse(next_path)
+                params = parse_qs(parsed.query)
+            else:
+                params = parse_qs(next_path)
 
-            # Update sync metadata
-            now = datetime.now().isoformat()
-            self._update_sync_metadata("orders", now, len(self.get_orders()))
+            cursor_list = params.get("cursor", [])
+            if cursor_list:
+                cursor = int(cursor_list[0])
+            else:
+                break
 
-            return SyncResult(
-                table="orders",
-                records_fetched=len(all_orders),
-                records_added=added,
-                total_records=len(self.get_orders()),
-                last_sync=now,
-            )
+        # Upsert into local cache (even if pagination failed partway)
+        added = self._upsert_orders(all_orders)
 
-        except Exception as e:
-            logger.error(f"Failed to sync orders: {e}")
-            return SyncResult(
-                table="orders",
-                records_fetched=0,
-                records_added=0,
-                total_records=len(self.get_orders()) if self.enabled else 0,
-                last_sync=datetime.now().isoformat(),
-                error=str(e),
-            )
+        # Update sync metadata
+        now = datetime.now().isoformat()
+        self._update_sync_metadata("orders", now, len(self.get_orders()))
+
+        return SyncResult(
+            table="orders",
+            records_fetched=len(all_orders),
+            records_added=added,
+            total_records=len(self.get_orders()),
+            last_sync=now,
+            error=pagination_error,
+        )
 
     # ---- Dividend Methods ----
 
@@ -663,9 +666,12 @@ class HistoricalDataStore:
             # Fetch all transactions from API (paginated)
             all_transactions: list[HistoryTransactionItem] = []
             cursor: str | None = None
+            time_from: str | None = None
 
             while True:
-                response = api_client.get_history_transactions(cursor=cursor, limit=50)
+                response = api_client.get_history_transactions(
+                    cursor=cursor, time_from=time_from, limit=50
+                )
                 if not response.items:
                     break
 
@@ -675,11 +681,27 @@ class HistoricalDataStore:
                 if not response.nextPagePath:
                     break
 
-                # Extract cursor from nextPagePath
-                import httpx
+                # Extract cursor AND time from nextPagePath
+                # Note: transactions API returns query string (limit=50&cursor=xxx&time=xxx)
+                # not a full path like dividends/orders, so we need to handle both formats
+                # The API requires BOTH cursor and time for pagination to work
+                from urllib.parse import parse_qs, urlparse
 
-                parsed = httpx.URL(response.nextPagePath)
-                cursor = parsed.params.get("cursor")
+                next_path = response.nextPagePath
+                # If it starts with /, it's a full path; otherwise it's a query string
+                if next_path.startswith("/"):
+                    parsed = urlparse(next_path)
+                    params = parse_qs(parsed.query)
+                else:
+                    # It's just a query string
+                    params = parse_qs(next_path)
+
+                cursor_list = params.get("cursor", [])
+                cursor = cursor_list[0] if cursor_list else None
+
+                time_list = params.get("time", [])
+                time_from = time_list[0] if time_list else None
+
                 if not cursor:
                     break
 

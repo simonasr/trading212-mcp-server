@@ -2,7 +2,7 @@
 
 import sys
 import tempfile
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -531,6 +531,57 @@ class TestSyncOperations:
         assert result.table == "transactions"
         assert result.records_fetched == 1
         assert result.error is None
+
+    def test_sync_transactions_handles_query_string_pagination(
+        self,
+        data_store: HistoricalDataStore,
+    ) -> None:
+        """Should handle query string format nextPagePath (transactions API quirk)."""
+        mock_client = MagicMock()
+
+        # First page with query string format nextPagePath (no leading /)
+        page1_txns = [
+            HistoryTransactionItem(
+                reference=f"ref-{i}",
+                type=HistoryTransactionTypeEnum.DEPOSIT,
+                amount=100.0 + i,
+                dateTime=datetime(2024, 1, i + 1, tzinfo=UTC),
+            )
+            for i in range(3)
+        ]
+        page2_txns = [
+            HistoryTransactionItem(
+                reference=f"ref-{i + 3}",
+                type=HistoryTransactionTypeEnum.DEPOSIT,
+                amount=200.0 + i,
+                dateTime=datetime(2024, 1, i + 4, tzinfo=UTC),
+            )
+            for i in range(2)
+        ]
+
+        mock_client.get_history_transactions.side_effect = [
+            PaginatedResponseHistoryTransactionItem(
+                items=page1_txns,
+                # Query string format (no leading /) - this is what the API actually returns
+                nextPagePath="limit=50&cursor=abc123&time=2024-01-01T00:00:00Z",
+            ),
+            PaginatedResponseHistoryTransactionItem(
+                items=page2_txns,
+                nextPagePath=None,
+            ),
+        ]
+
+        result = data_store.sync_transactions(mock_client)
+
+        assert result.table == "transactions"
+        assert result.records_fetched == 5
+        assert result.records_added == 5
+        assert result.error is None
+        assert mock_client.get_history_transactions.call_count == 2
+        # Verify second call used cursor AND time from the query string
+        second_call_args = mock_client.get_history_transactions.call_args_list[1]
+        assert second_call_args.kwargs.get("cursor") == "abc123"
+        assert second_call_args.kwargs.get("time_from") == "2024-01-01T00:00:00Z"
 
     def test_sync_all(self, data_store: HistoricalDataStore) -> None:
         """Should sync all tables."""
