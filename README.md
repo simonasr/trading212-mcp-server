@@ -1,160 +1,184 @@
 # Trading212 MCP Server
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.0.0-blue.svg)](CHANGELOG.md)
-[![Verified on MseeP](https://mseep.ai/badge.svg)](https://mseep.ai/app/1cda5fa3-820c-4e9b-a4ad-4d5c447cd7cd)
-[![MCP Badge](https://lobehub.com/badge/mcp/rohananandpandit-trading212-mcp-server?style=plastic)](https://lobehub.com/mcp/rohananandpandit-trading212-mcp-server)
+[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg)](CHANGELOG.md)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 ## Overview
 
-The Trading212 MCP server is a [Model Context Protocol](https://modelcontextprotocol.io/introduction) server implementation that provides seamless data connectivity to the Trading212 trading platform enabling advanced interaction capabilities.
+The Trading212 MCP server is a [Model Context Protocol](https://modelcontextprotocol.io/introduction) server implementation that provides seamless data connectivity to the Trading212 trading platform.
 
-## Core Features
+## Features
 
-### Trading212 API Integration
-- Comprehensive account management:
-  - Account metadata retrieval
-  - Cash balance monitoring
-  - Portfolio management with positions tracking
-- Advanced order handling:
-  - Market orders
-  - Limit orders
-  - Stop-limit orders
-  - Order history and management
-- Portfolio management:
-  - Pies (portfolio buckets) management
-  - Position tracking and search
-  - Historical order data with pagination
+- **Complete Trading212 API Integration**: Account management, order placement, portfolio tracking
+- **Rate Limiting**: Automatic per-endpoint rate limit tracking and waiting
+- **Retry Logic**: Exponential backoff for transient failures
+- **Error Handling**: Comprehensive custom exception hierarchy
+- **Auto-Pagination**: Helper methods to fetch all pages of paginated data
+- **Live Environment Safety**: Validation prevents unsupported order types in live trading
 
-### Market Data Access
-- Tradeable instruments information
-- Exchange data with working schedules
-- Historical trading data access
-- Real-time market connectivity
+## Requirements
 
-### Financial Analysis Tools
-- Professional financial analysis capabilities
-- Currency-aware data processing
-- Comprehensive trading data analysis
-- Risk management tools
+- Python >= 3.11
+- Trading212 API Key and Secret
 
-### MCP Protocol Support
-- Full MCP protocol implementation
-- Resource-based API endpoints
-- Tool-based functionality
-- Prompt-based analysis capabilities
+## Quick Start
 
-## Technical Requirements
+### 1. Clone the Repository
 
-- Python >= 3.11 (as specified in .python-version)
-- Pydantic >= 2.11.4
-- Hishel
+```bash
+git clone https://github.com/RohanAnandPandit/trading212-mcp-server.git
+cd trading212-mcp-server
+```
 
+### 2. Configure Environment
 
-## Tools
+Copy `.env.example` to `.env` and configure your credentials:
+
+```bash
+cp .env.example .env
+```
+
+Required environment variables:
+
+```env
+TRADING212_API_KEY=your_api_key_here
+TRADING212_API_SECRET=your_api_secret_here
+ENVIRONMENT=demo  # or "live"
+TRANSPORT=stdio
+```
+
+### 3. Install Dependencies
+
+```bash
+uv sync
+```
+
+### 4. Run the Server
+
+```bash
+uv run src/server.py
+```
+
+## Authentication
+
+> **Breaking Change in v0.2.0**: Authentication now requires both API key and API secret.
+
+Trading212 uses Basic authentication. You need both:
+- `TRADING212_API_KEY`: Your API key
+- `TRADING212_API_SECRET`: Your API secret
+
+Generate credentials from your [Trading212 account settings](https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-How-can-I-generate-an-API-key).
+
+## Live Environment Limitations
+
+⚠️ **Important**: The live Trading212 environment only supports **market orders** via API.
+
+Attempting to place limit, stop, or stop-limit orders in the live environment will raise a `ValidationError`. These order types are only available in the demo environment.
+
+## Tools Reference
 
 ### Instruments Metadata
-- `search_exchange`: Fetch exchanges, optionally filtered by name or ID
-- `search_instrument`: Fetch instruments, optionally filtered by ticker or name
+| Tool | Description |
+|------|-------------|
+| `search_instruments` | Search instruments by ticker or name |
+| `search_exchanges` | Search exchanges by name or ID |
 
-### Pies
-- `fetch_pies`: Fetch all pies
-- `duplicate_pie`: Duplicate a pie
-- `create_pie`: Create a new pie
-- `update_pie`: Update a specific pie by ID
-- `delete_pie`: Delete a pie
+### Pies (Portfolio Buckets)
+| Tool | Description |
+|------|-------------|
+| `get_pies` | Fetch all pies |
+| `get_pie` | Fetch a specific pie by ID |
+| `create_pie` | Create a new pie |
+| `update_pie` | Update a pie |
+| `delete_pie` | Delete a pie |
+| `duplicate_pie` | Duplicate a pie |
 
 ### Equity Orders
-- `fetch_all_orders`: Fetch all equity orders
-- `place_limit_order`: Place a limit order
-- `place_market_order`: Place a market order
-- `place_stop_order`: Place a stop order
-- `place_stop_limit_order`: Place a stop-limit order
-- `cancel_order`: Cancel an existing order by ID
-- `fetch_order`: Fetch a specific order by ID
+| Tool | Description |
+|------|-------------|
+| `get_orders` | Fetch all active orders |
+| `get_order` | Fetch a specific order by ID |
+| `place_market_order` | Place a market order |
+| `place_limit_order` | Place a limit order (demo only) |
+| `place_stop_order` | Place a stop order (demo only) |
+| `place_stop_limit_order` | Place a stop-limit order (demo only) |
+| `cancel_order` | Cancel an existing order |
 
 ### Account Data
-- `fetch_account_cash`: Fetch account cash balance
-- `fetch_account_metadata`: Fetch account id and currency
+| Tool | Description |
+|------|-------------|
+| `get_account_info` | Fetch account metadata (ID, currency) |
+| `get_account_cash` | Fetch account cash balance |
 
+### Portfolio
+| Tool | Description |
+|------|-------------|
+| `get_positions` | Fetch all open positions |
+| `get_position` | Search for a position by ticker |
 
-### Personal Portfolio
-- `fetch_open_positions`: Fetch all open positions
-- `search_specific_position_by_ticker`: Search for a position by ticker using POST endpoint
-- `fetch_open_position_by_ticker`: Fetch a position by ticker (deprecated)
-
-### Historical items
-- `fetch_historical_order_data`: Fetch historical order data with pagination
-- `fetch_paid_out_dividends`: Fetch historical dividend data with pagination
-- `fetch_exports_list`: Lists detailed information about all csv account exports
-- `request_export_csv`: Request a CSV export of the account's orders, dividends and transactions history
-- `fetch_transaction_list`: Fetch superficial information about movements to and from your account
+### Historical Data
+| Tool | Description |
+|------|-------------|
+| `get_order_history` | Fetch historical orders (paginated) |
+| `get_dividends` | Fetch dividend history (paginated) |
+| `get_transactions` | Fetch transaction history (paginated) |
+| `get_exports` | List all CSV exports |
+| `create_export` | Request a new CSV export |
 
 ## Resources
 
 ### Account Resources
-- `trading212://account/metadata`
-- `trading212://account/cash`
-- `trading212://account/portfolio`
-- `trading212://account/portfolio/{ticker}`
+- `trading212://account/info` - Account metadata
+- `trading212://account/cash` - Cash balance
+- `trading212://account/portfolio` - All positions
+- `trading212://account/portfolio/{ticker}` - Position by ticker
 
 ### Order Resources
-- `trading212://orders`
-- `trading212://orders/{order_id}`
+- `trading212://orders` - All orders
+- `trading212://orders/{order_id}` - Order by ID
 
-### Portfolio Resources
-- `trading212://pies`
-- `trading212://pies/{pie_id}`
+### Pie Resources
+- `trading212://pies` - All pies
+- `trading212://pies/{pie_id}` - Pie by ID
 
 ### Market Resources
-- `trading212://instruments`
-- `trading212://exchanges`
+- `trading212://instruments` - All tradeable instruments
+- `trading212://exchanges` - All exchanges
 
-### Reports Resources
-- `trading212://history/exports`
+### Report Resources
+- `trading212://history/exports` - All CSV exports
 
-## Prompts
+## Claude Desktop Configuration
 
-### Data Analysis
-- `analyse_trading212_data`: Analyse trading212 data with currency context
+### Using uv
 
-The prompt includes:
-- Professional financial expertise
-- Currency-aware analysis
-- Cautious financial advice
-- Dynamic currency information from account data
+```json
+{
+  "mcpServers": {
+    "trading212": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/path/to/trading212-mcp-server",
+        "src/server.py"
+      ],
+      "env": {
+        "TRADING212_API_KEY": "your_api_key",
+        "TRADING212_API_SECRET": "your_api_secret",
+        "ENVIRONMENT": "demo"
+      }
+    }
+  }
+}
+```
 
-## Installation
+### Using Docker
 
-### Clone repository
 ```bash
-git clone https://github.com/RohanAnandPandit/trading212-mcp-server.git
+docker build -t mcp/trading212 .
 ```
-
-### Environment Configuration
-Copy `.env.example` to `.env` and configure:
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-### Using Claude Desktop
-
-#### Installing via Docker
-
-- Clone the repository and build a local image to be utilized by your Claude desktop client
-
-```sh
-cd trading212-mcp-server
-docker build -t mcp/trading212-mcp-server .
-```
-
-- Change your `claude_desktop_config.json` to match the following, replacing `REPLACE_API_KEY` with your actual key:
-
- > `claude_desktop_config.json` path
- >
- > - On MacOS: `~/Library/Application\ Support/Claude/claude_desktop_config.json`
- > - On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -162,106 +186,79 @@ docker build -t mcp/trading212-mcp-server .
     "trading212": {
       "command": "docker",
       "args": [
-        "run",
-        "-i",
-        "-e",
-        "TRADING212_API_KEY",
+        "run", "-i",
+        "-e", "TRADING212_API_KEY",
+        "-e", "TRADING212_API_SECRET",
+        "-e", "ENVIRONMENT",
         "mcp/trading212"
       ],
       "env": {
-        "TRADING212_API_KEY": "REPLACE_API_KEY"
+        "TRADING212_API_KEY": "your_api_key",
+        "TRADING212_API_SECRET": "your_api_secret",
+        "ENVIRONMENT": "demo"
       }
     }
   }
 }
 ```
 
-### Using uv
+## Error Handling
 
-```json
-{
- "mcpServers": {
-  "trading212": {
-    "command": "uv",
-    "args": [
-        "run",
-        "--directory",
-        "<insert path to repo>",
-        "src/server.py"
-    ],
-    "env": {
-        "TRADING212_API_KEY": "<insert api key>"
-    }
-  }
- }
-}
+The client uses a custom exception hierarchy:
+
+| Exception | HTTP Status | Description |
+|-----------|-------------|-------------|
+| `AuthenticationError` | 401 | Invalid API credentials |
+| `AuthorizationError` | 403 | Missing required permission |
+| `NotFoundError` | 404 | Resource not found |
+| `RateLimitError` | 429 | Rate limit exceeded |
+| `ValidationError` | 400 | Request validation failed |
+| `TimeoutError` | 408 | Request timed out |
+| `ServerError` | 5xx | Server-side error |
+
+## Rate Limiting
+
+The client automatically:
+- Tracks rate limits per endpoint using `x-ratelimit-*` headers
+- Waits when rate limits are exhausted
+- Retries requests with exponential backoff on transient failures
+
+## Development
+
+### Install Dev Dependencies
+
+```bash
+uv sync --dev
 ```
 
-### Generating API key
-- You can generate the API key from your account settings
-- Visit the [Trading212 help centre](https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-How-can-I-generate-an-API-key) for more information
-- If you are using the API key for the "Practice" account in Trading212 then set the `ENVIRONMENT` to `demo` in `.env`
-- Set `ENVIRONMENT` to `live` if you are using the API key for real money
+### Run Tests
 
-
-### Install packages
-
-```
-uv install
+```bash
+uv run pytest
 ```
 
-or 
+### Run Linter
 
-```
-pip install -r requirements.txt
-```
-
-#### Running
-
-After connecting Claude client with the MCP tool via json file and installing the packages, Claude should see the server's mcp tools:
-
-You can run the server yourself via:
-In trading212-mcp-server repo: 
-```
-uv run src/server.py
+```bash
+uv run ruff check src tests
 ```
 
-### Using Python
+### Run Type Checker
 
-```json
-{
- "mcpServers": {
-  "trading212": {
-    "command": "<insert path to python>",
-    "args": [
-        "<insert path to repo>/src/server.py"
-    ]
-  }
- }
-}
+```bash
+uv run mypy src
 ```
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Support
-
-For support, please:
-- Open an issue in the GitHub repository
-
 ## Documentation
 
-For the Trading212 API documentation, view the [Public API docs](https://t212public-api-docs.redoc.ly/).
-
+- [Trading212 API Documentation](https://t212public-api-docs.redoc.ly/)
+- [CHANGELOG](CHANGELOG.md)
+- [CONTRIBUTING](CONTRIBUTING.md)
 
 ## Legal Notice
 
-This is an unofficial implementation of the Trading212 MCP protocol. Always consult official Trading212 documentation and terms of service before using this software.
-
-## Credits
-
-- Project maintained by [Rohan Pandit](https://github.com/RohanAnandPandit)
-
-## Contributing
-- Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for more information on how to contribute to this project.
+This is an unofficial implementation. Always consult official Trading212 documentation and terms of service before using this software.
