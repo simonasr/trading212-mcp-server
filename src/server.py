@@ -4,6 +4,7 @@ This module starts the MCP server with the configured transport.
 """
 
 import os
+from typing import Literal, cast
 
 from dotenv import find_dotenv, load_dotenv
 
@@ -16,11 +17,13 @@ from mcp_server import mcp
 
 load_dotenv(find_dotenv())
 
+TransportType = Literal["stdio", "sse", "streamable-http"]
+
 
 def main() -> None:
     """Start the Trading212 MCP server."""
     transport = os.getenv("TRANSPORT", "stdio")
-    mcp.run(transport=transport)
+    mcp.run(transport=cast(TransportType, transport))
 
 
 if __name__ == "__main__":

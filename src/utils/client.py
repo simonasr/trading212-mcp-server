@@ -700,9 +700,10 @@ class Trading212Client:
                 break
 
             # Extract cursor from nextPagePath
-            cursor = self._extract_cursor_from_path(response.nextPagePath)
-            if cursor is None:
+            extracted = self._extract_cursor_from_path(response.nextPagePath)
+            if extracted is None or isinstance(extracted, str):
                 break
+            cursor = extracted
 
         return all_items
 
@@ -734,11 +735,12 @@ class Trading212Client:
                 break
 
             # Extract cursor from nextPagePath (string cursor for transactions)
-            cursor = self._extract_cursor_from_path(
+            extracted = self._extract_cursor_from_path(
                 response.nextPagePath, as_string=True
             )
-            if cursor is None:
+            if extracted is None or isinstance(extracted, int):
                 break
+            cursor = extracted
 
         return all_items
 

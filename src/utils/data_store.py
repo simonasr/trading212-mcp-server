@@ -514,9 +514,7 @@ class HistoricalDataStore:
 
         return transactions
 
-    def _upsert_transactions(
-        self, transactions: list[HistoryTransactionItem]
-    ) -> int:
+    def _upsert_transactions(self, transactions: list[HistoryTransactionItem]) -> int:
         """Insert or update transactions in the cache.
 
         Args:

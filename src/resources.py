@@ -7,6 +7,7 @@ protocol to retrieve data from the Trading212 API.
 from mcp_server import client, mcp
 from models import (
     Account,
+    AccountBucketInstrumentsDetailedResponse,
     AccountBucketResultResponse,
     Cash,
     Exchange,
@@ -124,7 +125,7 @@ def get_pies() -> list[AccountBucketResultResponse]:
 
 
 @mcp.resource("trading212://pies/{pie_id}")
-def get_pie_by_id(pie_id: int) -> AccountBucketResultResponse:
+def get_pie_by_id(pie_id: int) -> AccountBucketInstrumentsDetailedResponse:
     """
     Fetch a specific pie by ID.
 
@@ -132,7 +133,7 @@ def get_pie_by_id(pie_id: int) -> AccountBucketResultResponse:
         pie_id: Unique identifier of the pie.
 
     Returns:
-        AccountBucketResultResponse with pie details.
+        AccountBucketInstrumentsDetailedResponse with pie details.
     """
     return client.get_pie_by_id(pie_id)
 

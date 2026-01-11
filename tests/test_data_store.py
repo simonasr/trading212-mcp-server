@@ -114,9 +114,7 @@ class TestDataStoreInit:
     def test_creates_schema(self, data_store: HistoricalDataStore) -> None:
         """Should create all required tables."""
         conn = data_store._get_connection()
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = {row[0] for row in cursor.fetchall()}
 
         assert "orders" in tables
@@ -307,14 +305,10 @@ class TestSyncOperations:
         mock_client = MagicMock()
 
         # First page returns 8 orders (full page)
-        page1_orders = [
-            HistoricalOrder(id=i, ticker="AAPL_US_EQ")
-            for i in range(8)
-        ]
+        page1_orders = [HistoricalOrder(id=i, ticker="AAPL_US_EQ") for i in range(8)]
         # Second page returns 3 orders (partial page = last page)
         page2_orders = [
-            HistoricalOrder(id=i + 8, ticker="AAPL_US_EQ")
-            for i in range(3)
+            HistoricalOrder(id=i + 8, ticker="AAPL_US_EQ") for i in range(3)
         ]
 
         mock_client.get_historical_order_data.side_effect = [
@@ -382,9 +376,7 @@ class TestSyncOperations:
         assert "dividends" in results
         assert "transactions" in results
 
-    def test_sync_handles_api_error(
-        self, data_store: HistoricalDataStore
-    ) -> None:
+    def test_sync_handles_api_error(self, data_store: HistoricalDataStore) -> None:
         """Should handle API errors gracefully."""
         mock_client = MagicMock()
         mock_client.get_historical_order_data.side_effect = Exception("API Error")
@@ -468,9 +460,7 @@ class TestCacheManagement:
         assert stats.transactions_count == 0
         assert stats.database_size_bytes > 0
 
-    def test_get_stats_disabled(
-        self, disabled_data_store: HistoricalDataStore
-    ) -> None:
+    def test_get_stats_disabled(self, disabled_data_store: HistoricalDataStore) -> None:
         """Disabled store should return empty stats."""
         stats = disabled_data_store.get_stats()
 
@@ -494,9 +484,7 @@ class TestSyncMetadata:
         assert metadata["last_sync"] == now
         assert metadata["record_count"] == 100
 
-    def test_get_nonexistent_metadata(
-        self, data_store: HistoricalDataStore
-    ) -> None:
+    def test_get_nonexistent_metadata(self, data_store: HistoricalDataStore) -> None:
         """Should return None for nonexistent metadata."""
         metadata = data_store._get_sync_metadata("nonexistent")
         assert metadata is None

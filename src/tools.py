@@ -5,6 +5,7 @@ to interact with the Trading212 API.
 """
 
 from datetime import datetime
+from typing import Any
 
 from mcp_server import client, mcp
 from models import (
@@ -183,7 +184,7 @@ def delete_pie(pie_id: int) -> None:
 
 
 @mcp.tool("get_pie")
-def get_pie(pie_id: int) -> AccountBucketResultResponse:
+def get_pie(pie_id: int) -> AccountBucketInstrumentsDetailedResponse:
     """
     Fetch a specific pie by its ID.
 
@@ -191,7 +192,7 @@ def get_pie(pie_id: int) -> AccountBucketResultResponse:
         pie_id: The unique identifier of the pie.
 
     Returns:
-        AccountBucketResultResponse with the pie details.
+        AccountBucketInstrumentsDetailedResponse with the pie details.
     """
     return client.get_pie_by_id(pie_id)
 
@@ -239,7 +240,7 @@ def duplicate_pie(
     pie_id: int,
     name: str | None = None,
     icon: str | None = None,
-) -> AccountBucketResultResponse:
+) -> AccountBucketInstrumentsDetailedResponse:
     """
     Create a duplicate of an existing pie.
 
@@ -249,7 +250,7 @@ def duplicate_pie(
         icon: Optional new icon for the duplicated pie.
 
     Returns:
-        AccountBucketResultResponse with details of the duplicated pie.
+        AccountBucketInstrumentsDetailedResponse with details of the duplicated pie.
     """
     duplicate_request = DuplicateBucketRequest(name=name, icon=icon)
     return client.duplicate_pie(pie_id, duplicate_request)
@@ -579,7 +580,7 @@ def get_transactions(
 def sync_historical_data(
     tables: list[str] | None = None,
     force: bool = False,
-) -> dict[str, dict]:
+) -> dict[str, dict[str, Any]]:
     """
     Manually sync historical data from Trading212 API to local cache.
 
@@ -643,7 +644,7 @@ def clear_cache(table: str | None = None) -> dict[str, int]:
 
 
 @mcp.tool("cache_stats")
-def cache_stats() -> dict:
+def cache_stats() -> dict[str, Any]:
     """
     Get statistics about the local cache.
 

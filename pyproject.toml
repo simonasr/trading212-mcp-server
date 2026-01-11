@@ -71,19 +71,27 @@ known-first-party = ["src"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-warn_return_any = true
+warn_return_any = false  # Disabled due to MCP tool return types
 warn_unused_ignores = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
-disallow_untyped_decorators = true
+disallow_untyped_decorators = false  # Disabled due to MCP decorators being untyped
 no_implicit_optional = true
 warn_redundant_casts = true
 warn_unused_configs = true
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = ["hishel.*", "mcp.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tools", "prompts", "resources"]
+disallow_untyped_decorators = false
+warn_return_any = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
