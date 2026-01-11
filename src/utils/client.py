@@ -926,7 +926,7 @@ class Trading212Client:
         Get statistics about the local cache.
 
         Returns:
-            CacheStats object with record counts and sync times.
+            CacheStats object with record counts, sync times, and data coverage.
         """
         data_store = self._get_data_store()
         if not data_store:
@@ -940,6 +940,9 @@ class Trading212Client:
                 last_orders_sync=None,
                 last_dividends_sync=None,
                 last_transactions_sync=None,
+                orders_coverage=None,
+                dividends_coverage=None,
+                transactions_coverage=None,
             )
 
         return data_store.get_stats()

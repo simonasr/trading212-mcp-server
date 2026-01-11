@@ -649,7 +649,8 @@ def cache_stats() -> dict[str, Any]:
     Get statistics about the local cache.
 
     This tool provides information about the current state of the
-    local SQLite cache, including record counts and last sync times.
+    local SQLite cache, including record counts, last sync times,
+    and data coverage (date ranges) to help verify cache completeness.
 
     Returns:
         Dictionary with cache statistics:
@@ -662,21 +663,35 @@ def cache_stats() -> dict[str, Any]:
         - last_orders_sync: Last sync timestamp for orders
         - last_dividends_sync: Last sync timestamp for dividends
         - last_transactions_sync: Last sync timestamp for transactions
+        - orders_coverage: Date range of cached orders (count, oldest, newest)
+        - dividends_coverage: Date range of cached dividends
+        - transactions_coverage: Date range of cached transactions
 
     Example:
         >>> cache_stats()
         {
             "enabled": true,
             "database_path": "./data/trading212.db",
-            "database_size_bytes": 524288,
             "orders_count": 150,
-            "dividends_count": 42,
-            "transactions_count": 89,
-            "last_orders_sync": "2024-01-15T10:30:00",
+            "orders_coverage": {
+                "count": 150,
+                "oldest_date": "2021-01-03",
+                "newest_date": "2026-01-10"
+            },
             ...
         }
     """
     stats = client.get_cache_stats()
+
+    def coverage_to_dict(cov: Any) -> dict[str, Any] | None:
+        if cov is None:
+            return None
+        return {
+            "count": cov.count,
+            "oldest_date": cov.oldest_date,
+            "newest_date": cov.newest_date,
+        }
+
     return {
         "enabled": stats.enabled,
         "database_path": stats.database_path,
@@ -687,4 +702,7 @@ def cache_stats() -> dict[str, Any]:
         "last_orders_sync": stats.last_orders_sync,
         "last_dividends_sync": stats.last_dividends_sync,
         "last_transactions_sync": stats.last_transactions_sync,
+        "orders_coverage": coverage_to_dict(stats.orders_coverage),
+        "dividends_coverage": coverage_to_dict(stats.dividends_coverage),
+        "transactions_coverage": coverage_to_dict(stats.transactions_coverage),
     }

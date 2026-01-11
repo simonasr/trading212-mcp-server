@@ -28,6 +28,7 @@ __all__ = [
     "HistoricalDataStore",
     "SyncResult",
     "CacheStats",
+    "DataCoverage",
 ]
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,15 @@ class SyncResult:
 
 
 @dataclass
+class DataCoverage:
+    """Date range coverage for cached data."""
+
+    count: int
+    oldest_date: str | None
+    newest_date: str | None
+
+
+@dataclass
 class CacheStats:
     """Statistics about the local cache."""
 
@@ -64,6 +74,10 @@ class CacheStats:
     last_orders_sync: str | None
     last_dividends_sync: str | None
     last_transactions_sync: str | None
+    # Data coverage - helps users know if cache is complete
+    orders_coverage: DataCoverage | None
+    dividends_coverage: DataCoverage | None
+    transactions_coverage: DataCoverage | None
 
 
 class HistoricalDataStore:
@@ -791,11 +805,42 @@ class HistoricalDataStore:
         logger.info(f"Cache cleared: {deleted}")
         return deleted
 
+    def _get_data_coverage(self, table: str, date_column: str) -> DataCoverage | None:
+        """Get date range coverage for a table.
+
+        Args:
+            table: Table name (orders, dividends, transactions).
+            date_column: Column containing the date.
+
+        Returns:
+            DataCoverage with count and date range, or None if empty.
+        """
+        conn = self._get_connection()
+        row = conn.execute(
+            f"""
+            SELECT
+                COUNT(*) as count,
+                MIN({date_column}) as oldest,
+                MAX({date_column}) as newest
+            FROM {table}
+            WHERE account_id = ?
+            """,
+            (self.account_id,),
+        ).fetchone()
+
+        if row and row["count"] > 0:
+            return DataCoverage(
+                count=row["count"],
+                oldest_date=row["oldest"],
+                newest_date=row["newest"],
+            )
+        return DataCoverage(count=0, oldest_date=None, newest_date=None)
+
     def get_stats(self) -> CacheStats:
         """Get statistics about the cache.
 
         Returns:
-            CacheStats with record counts and sync times.
+            CacheStats with record counts, sync times, and data coverage.
         """
         if not self.enabled:
             return CacheStats(
@@ -808,6 +853,9 @@ class HistoricalDataStore:
                 last_orders_sync=None,
                 last_dividends_sync=None,
                 last_transactions_sync=None,
+                orders_coverage=None,
+                dividends_coverage=None,
+                transactions_coverage=None,
             )
 
         conn = self._get_connection()
@@ -828,6 +876,11 @@ class HistoricalDataStore:
         dividends_meta = self._get_sync_metadata("dividends")
         transactions_meta = self._get_sync_metadata("transactions")
 
+        # Get data coverage (date ranges)
+        orders_coverage = self._get_data_coverage("orders", "date_created")
+        dividends_coverage = self._get_data_coverage("dividends", "paid_on")
+        transactions_coverage = self._get_data_coverage("transactions", "datetime")
+
         # Get database file size
         db_size = 0
         if os.path.exists(self.db_path):
@@ -845,4 +898,7 @@ class HistoricalDataStore:
             last_transactions_sync=transactions_meta["last_sync"]
             if transactions_meta
             else None,
+            orders_coverage=orders_coverage,
+            dividends_coverage=dividends_coverage,
+            transactions_coverage=transactions_coverage,
         )
