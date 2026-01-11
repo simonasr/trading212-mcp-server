@@ -341,25 +341,29 @@ class HistoricalDataStore:
             cursor: int | None = None
 
             while True:
-                orders = api_client.get_historical_order_data(
+                response = api_client.get_historical_order_data(
                     cursor=cursor,
                     limit=8,  # Trading212 bug: limit > 8 causes 500 errors
                 )
-                if not orders:
+                if not response.items:
                     break
 
-                all_orders.extend(orders)
+                all_orders.extend(response.items)
 
-                # Check if there are more pages
-                # Orders are returned newest first, so we need the oldest ID
-                if len(orders) < 8:
+                # Check for next page using nextPagePath (like dividends)
+                if not response.nextPagePath:
                     break
 
-                # Use the oldest order ID as the cursor for the next page
-                oldest_order = min(orders, key=lambda o: o.id or 0)
-                if oldest_order.id is None:
+                # Extract cursor from nextPagePath
+                # Format: /api/v0/equity/history/orders?cursor=123&limit=8
+                import httpx
+
+                parsed = httpx.URL(response.nextPagePath)
+                cursor_str = parsed.params.get("cursor")
+                if cursor_str:
+                    cursor = int(cursor_str)
+                else:
                     break
-                cursor = oldest_order.id
 
             # Upsert into local cache
             added = self._upsert_orders(all_orders)

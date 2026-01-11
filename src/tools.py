@@ -17,11 +17,11 @@ from models import (
     DuplicateBucketRequest,
     EnqueuedReportResponse,
     Exchange,
-    HistoricalOrder,
     LimitRequest,
     LimitRequestTimeValidityEnum,
     MarketRequest,
     Order,
+    PaginatedResponseHistoricalOrder,
     PaginatedResponseHistoryDividendItem,
     PaginatedResponseHistoryTransactionItem,
     PieRequest,
@@ -468,7 +468,7 @@ def get_order_history(
     cursor: int | None = None,
     ticker: str | None = None,
     limit: int = 8,
-) -> list[HistoricalOrder]:
+) -> PaginatedResponseHistoricalOrder:
     """
     Fetch historical order data with optional pagination and filtering.
 
@@ -479,7 +479,7 @@ def get_order_history(
             server bug where limit > 8 causes 500 errors, so max is 8.
 
     Returns:
-        List of HistoricalOrder objects.
+        PaginatedResponseHistoricalOrder with order items and nextPagePath.
     """
     return client.get_historical_order_data(cursor=cursor, ticker=ticker, limit=limit)
 

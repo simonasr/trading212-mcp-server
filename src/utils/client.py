@@ -37,6 +37,7 @@ from models import (
     LimitRequest,
     MarketRequest,
     Order,
+    PaginatedResponseHistoricalOrder,
     PaginatedResponseHistoryDividendItem,
     PaginatedResponseHistoryTransactionItem,
     PieRequest,
@@ -573,7 +574,7 @@ class Trading212Client:
         cursor: int | None = None,
         ticker: str | None = None,
         limit: int = 8,
-    ) -> list[HistoricalOrder]:
+    ) -> PaginatedResponseHistoricalOrder:
         """
         Fetch historical order data with pagination.
 
@@ -584,7 +585,7 @@ class Trading212Client:
                 where limit > 8 causes 500 errors, so default is 8.
 
         Returns:
-            List of HistoricalOrder objects.
+            PaginatedResponseHistoricalOrder with order items and nextPagePath.
         """
         # Trading212 bug: limit > 8 causes 500 errors
         params: dict[str, Any] = {"limit": min(limit, 8)}
@@ -594,7 +595,10 @@ class Trading212Client:
             params["ticker"] = ticker
 
         data = self._make_request("GET", "/equity/history/orders", params=params)
-        return [HistoricalOrder.model_validate(order) for order in data["items"]]
+        return PaginatedResponseHistoricalOrder(
+            items=[HistoricalOrder.model_validate(order) for order in data["items"]],
+            nextPagePath=data.get("nextPagePath"),
+        )
 
     def get_dividends(
         self,
@@ -964,8 +968,8 @@ class Trading212Client:
         """
         data_store = self._get_data_store()
         if not data_store:
-            # Fall back to API
-            return self.get_historical_order_data(ticker=ticker)
+            # Fall back to API (extract items from paginated response)
+            return self.get_historical_order_data(ticker=ticker).items
 
         if sync_first:
             data_store.sync_orders(self)

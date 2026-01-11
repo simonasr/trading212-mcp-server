@@ -21,6 +21,7 @@ from models import (
     HistoryDividendItem,
     HistoryTransactionItem,
     HistoryTransactionTypeEnum,
+    PaginatedResponseHistoricalOrder,
     PaginatedResponseHistoryDividendItem,
     PaginatedResponseHistoryTransactionItem,
 )
@@ -444,7 +445,12 @@ class TestSyncOperations:
     ) -> None:
         """Should sync orders from API to cache."""
         mock_client = MagicMock()
-        mock_client.get_historical_order_data.return_value = [sample_order]
+        mock_client.get_historical_order_data.return_value = (
+            PaginatedResponseHistoricalOrder(
+                items=[sample_order],
+                nextPagePath=None,
+            )
+        )
 
         result = data_store.sync_orders(mock_client)
 
@@ -463,18 +469,24 @@ class TestSyncOperations:
         """Should handle paginated order responses."""
         mock_client = MagicMock()
 
-        # First page returns 8 orders (full page)
+        # First page returns 8 orders with nextPagePath
         page1_orders = [
             make_test_order(order_id=i, ticker="AAPL_US_EQ") for i in range(8)
         ]
-        # Second page returns 3 orders (partial page = last page)
+        # Second page returns 3 orders (no nextPagePath = last page)
         page2_orders = [
             make_test_order(order_id=i + 8, ticker="AAPL_US_EQ") for i in range(3)
         ]
 
         mock_client.get_historical_order_data.side_effect = [
-            page1_orders,
-            page2_orders,
+            PaginatedResponseHistoricalOrder(
+                items=page1_orders,
+                nextPagePath="/api/v0/equity/history/orders?cursor=12345&limit=8",
+            ),
+            PaginatedResponseHistoricalOrder(
+                items=page2_orders,
+                nextPagePath=None,  # Last page
+            ),
         ]
 
         result = data_store.sync_orders(mock_client)
@@ -523,7 +535,9 @@ class TestSyncOperations:
     def test_sync_all(self, data_store: HistoricalDataStore) -> None:
         """Should sync all tables."""
         mock_client = MagicMock()
-        mock_client.get_historical_order_data.return_value = []
+        mock_client.get_historical_order_data.return_value = (
+            PaginatedResponseHistoricalOrder(items=[], nextPagePath=None)
+        )
         mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
             items=[], nextPagePath=None
         )
