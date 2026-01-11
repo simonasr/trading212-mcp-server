@@ -45,16 +45,28 @@ class TestClientAuthentication:
         # Verify the auth header is set correctly in the client
         assert client.client.headers.get("Authorization") == expected_auth
 
-    def test_client_raises_on_missing_api_key(self) -> None:
+    def test_client_raises_on_missing_api_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Client should raise ValueError when API key is missing."""
         from utils.client import Trading212Client
+
+        # Clear environment variables to test missing credentials
+        monkeypatch.delenv("TRADING212_API_KEY", raising=False)
+        monkeypatch.delenv("TRADING212_API_SECRET", raising=False)
 
         with pytest.raises(ValueError, match="API key is required"):
             Trading212Client(api_key=None, api_secret="secret")
 
-    def test_client_raises_on_missing_api_secret(self, api_key: str) -> None:
+    def test_client_raises_on_missing_api_secret(
+        self, api_key: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Client should raise ValueError when API secret is missing."""
         from utils.client import Trading212Client
+
+        # Clear environment variables to test missing credentials
+        monkeypatch.delenv("TRADING212_API_KEY", raising=False)
+        monkeypatch.delenv("TRADING212_API_SECRET", raising=False)
 
         with pytest.raises(ValueError, match="API secret is required"):
             Trading212Client(api_key=api_key, api_secret=None)
@@ -84,9 +96,13 @@ class TestClientAuthentication:
         self,
         api_key: str,
         api_secret: str,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Client should use demo environment by default."""
         from utils.client import Trading212Client
+
+        # Clear environment variable to test default behavior
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
 
         client = Trading212Client(api_key=api_key, api_secret=api_secret)
 

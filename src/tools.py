@@ -59,6 +59,10 @@ __all__ = [
     "get_exports",
     "create_export",
     "get_transactions",
+    # Cache management tools
+    "sync_historical_data",
+    "clear_cache",
+    "cache_stats",
 ]
 
 
@@ -566,3 +570,120 @@ def get_transactions(
     return client.get_history_transactions(
         cursor=cursor, time_from=time_from, limit=limit
     )
+
+
+# Cache Management Tools
+
+
+@mcp.tool("sync_historical_data")
+def sync_historical_data(
+    tables: list[str] | None = None,
+    force: bool = False,
+) -> dict[str, dict]:
+    """
+    Manually sync historical data from Trading212 API to local cache.
+
+    This tool syncs orders, dividends, and/or transactions from the API
+    to a local SQLite database for faster access and offline analysis.
+    Requires ENABLE_LOCAL_CACHE=true in environment.
+
+    Args:
+        tables: Which tables to sync. Options: "orders", "dividends",
+                "transactions". If None, syncs all tables.
+        force: If True, clears cache and does a full resync.
+
+    Returns:
+        Dictionary with sync results per table, including:
+        - records_fetched: Number of records retrieved from API
+        - records_added: Number of new records added to cache
+        - total_records: Total records now in cache
+        - last_sync: Timestamp of this sync
+        - error: Error message if sync failed (optional)
+
+    Example:
+        >>> sync_historical_data()  # Sync all tables
+        >>> sync_historical_data(tables=["orders"])  # Sync only orders
+        >>> sync_historical_data(force=True)  # Force full resync
+    """
+    results = client.sync_historical_data(tables=tables, force=force)
+    # Convert SyncResult dataclasses to dicts for JSON serialization
+    return {
+        table: {
+            "table": result.table,
+            "records_fetched": result.records_fetched,
+            "records_added": result.records_added,
+            "total_records": result.total_records,
+            "last_sync": result.last_sync,
+            "error": result.error,
+        }
+        for table, result in results.items()
+    }
+
+
+@mcp.tool("clear_cache")
+def clear_cache(table: str | None = None) -> dict[str, int]:
+    """
+    Clear local cache for historical data.
+
+    This tool deletes cached data from the local SQLite database.
+    Requires ENABLE_LOCAL_CACHE=true in environment.
+
+    Args:
+        table: Specific table to clear ("orders", "dividends", "transactions").
+               If None, clears entire cache including sync metadata.
+
+    Returns:
+        Dictionary with counts of deleted records per table.
+
+    Example:
+        >>> clear_cache()  # Clear all cached data
+        >>> clear_cache(table="orders")  # Clear only cached orders
+    """
+    return client.clear_cache(table=table)
+
+
+@mcp.tool("cache_stats")
+def cache_stats() -> dict:
+    """
+    Get statistics about the local cache.
+
+    This tool provides information about the current state of the
+    local SQLite cache, including record counts and last sync times.
+
+    Returns:
+        Dictionary with cache statistics:
+        - enabled: Whether caching is enabled
+        - database_path: Path to the SQLite database file
+        - database_size_bytes: Size of the database file in bytes
+        - orders_count: Number of cached orders
+        - dividends_count: Number of cached dividends
+        - transactions_count: Number of cached transactions
+        - last_orders_sync: Last sync timestamp for orders
+        - last_dividends_sync: Last sync timestamp for dividends
+        - last_transactions_sync: Last sync timestamp for transactions
+
+    Example:
+        >>> cache_stats()
+        {
+            "enabled": true,
+            "database_path": "./data/trading212.db",
+            "database_size_bytes": 524288,
+            "orders_count": 150,
+            "dividends_count": 42,
+            "transactions_count": 89,
+            "last_orders_sync": "2024-01-15T10:30:00",
+            ...
+        }
+    """
+    stats = client.get_cache_stats()
+    return {
+        "enabled": stats.enabled,
+        "database_path": stats.database_path,
+        "database_size_bytes": stats.database_size_bytes,
+        "orders_count": stats.orders_count,
+        "dividends_count": stats.dividends_count,
+        "transactions_count": stats.transactions_count,
+        "last_orders_sync": stats.last_orders_sync,
+        "last_dividends_sync": stats.last_dividends_sync,
+        "last_transactions_sync": stats.last_transactions_sync,
+    }

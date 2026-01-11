@@ -12,6 +12,7 @@ from typing import Any
 import hishel
 import httpx
 
+from config import DATABASE_PATH, ENABLE_LOCAL_CACHE
 from exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -46,6 +47,7 @@ from models import (
     StopRequest,
     TradeableInstrument,
 )
+from utils.data_store import CacheStats, HistoricalDataStore, SyncResult
 from utils.hishel_config import controller, storage
 from utils.rate_limiter import RateLimiter
 from utils.retry import with_retry
@@ -134,6 +136,10 @@ class Trading212Client:
             base_delay=1.0,
             max_delay=30.0,
         )(self._raw_request)
+
+        # Initialize local data store if enabled
+        self._data_store: HistoricalDataStore | None = None
+        self._data_store_init_pending = ENABLE_LOCAL_CACHE
 
     def _raw_request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         """
@@ -800,3 +806,213 @@ class Trading212Client:
 
         data = self._make_request("POST", "/history/exports", json=payload)
         return EnqueuedReportResponse.model_validate(data)
+
+    # ---- Local Cache Methods ----
+
+    def _get_data_store(self) -> HistoricalDataStore | None:
+        """
+        Get or initialize the data store (lazy initialization).
+
+        The data store requires the account ID, which we only get after
+        making an API call. This method lazily initializes it on first use.
+
+        Returns:
+            HistoricalDataStore if caching is enabled, None otherwise.
+        """
+        if self._data_store_init_pending and self._data_store is None:
+            try:
+                account = self.get_account_info()
+                self._data_store = HistoricalDataStore(
+                    db_path=DATABASE_PATH,
+                    account_id=account.id,
+                    enabled=True,
+                )
+                logger.info(
+                    "Local data store initialized for account %d at %s",
+                    account.id,
+                    DATABASE_PATH,
+                )
+            except Exception as e:
+                logger.warning("Failed to initialize data store: %s", e)
+                self._data_store_init_pending = False
+        return self._data_store
+
+    @property
+    def cache_enabled(self) -> bool:
+        """Check if local caching is enabled."""
+        return ENABLE_LOCAL_CACHE and self._get_data_store() is not None
+
+    def sync_historical_data(
+        self,
+        tables: list[str] | None = None,
+        force: bool = False,
+    ) -> dict[str, SyncResult]:
+        """
+        Sync historical data from API to local cache.
+
+        Args:
+            tables: Which tables to sync ("orders", "dividends", "transactions").
+                    If None, syncs all tables.
+            force: If True, clears cache before syncing.
+
+        Returns:
+            Dictionary mapping table names to their SyncResult.
+
+        Raises:
+            ValueError: If caching is not enabled.
+        """
+        data_store = self._get_data_store()
+        if not data_store:
+            raise ValueError(
+                "Local caching is not enabled. Set ENABLE_LOCAL_CACHE=true "
+                "in your environment to enable caching."
+            )
+
+        if force:
+            if tables:
+                for table in tables:
+                    data_store.clear_cache(table)
+            else:
+                data_store.clear_cache()
+
+        valid_tables = {"orders", "dividends", "transactions"}
+        tables_to_sync = tables or list(valid_tables)
+
+        # Validate table names
+        for table in tables_to_sync:
+            if table not in valid_tables:
+                raise ValueError(
+                    f"Invalid table name: {table}. "
+                    f"Valid tables are: {', '.join(valid_tables)}"
+                )
+
+        results: dict[str, SyncResult] = {}
+        for table in tables_to_sync:
+            if table == "orders":
+                results["orders"] = data_store.sync_orders(self)
+            elif table == "dividends":
+                results["dividends"] = data_store.sync_dividends(self)
+            elif table == "transactions":
+                results["transactions"] = data_store.sync_transactions(self)
+
+        return results
+
+    def clear_cache(self, table: str | None = None) -> dict[str, int]:
+        """
+        Clear local cache.
+
+        Args:
+            table: Specific table to clear. If None, clears all tables.
+
+        Returns:
+            Dictionary with counts of deleted records per table.
+
+        Raises:
+            ValueError: If caching is not enabled.
+        """
+        data_store = self._get_data_store()
+        if not data_store:
+            raise ValueError(
+                "Local caching is not enabled. Set ENABLE_LOCAL_CACHE=true "
+                "in your environment to enable caching."
+            )
+
+        return data_store.clear_cache(table)
+
+    def get_cache_stats(self) -> CacheStats:
+        """
+        Get statistics about the local cache.
+
+        Returns:
+            CacheStats object with record counts and sync times.
+        """
+        data_store = self._get_data_store()
+        if not data_store:
+            return CacheStats(
+                enabled=False,
+                database_path=DATABASE_PATH,
+                database_size_bytes=0,
+                orders_count=0,
+                dividends_count=0,
+                transactions_count=0,
+                last_orders_sync=None,
+                last_dividends_sync=None,
+                last_transactions_sync=None,
+            )
+
+        return data_store.get_stats()
+
+    def get_cached_orders(
+        self,
+        ticker: str | None = None,
+        sync_first: bool = True,
+    ) -> list[HistoricalOrder]:
+        """
+        Get historical orders from local cache.
+
+        Args:
+            ticker: Optional ticker to filter by.
+            sync_first: If True, sync from API before returning cached data.
+
+        Returns:
+            List of HistoricalOrder objects from cache.
+        """
+        data_store = self._get_data_store()
+        if not data_store:
+            # Fall back to API
+            return self.get_historical_order_data(ticker=ticker)
+
+        if sync_first:
+            data_store.sync_orders(self)
+
+        return data_store.get_orders(ticker=ticker)
+
+    def get_cached_dividends(
+        self,
+        ticker: str | None = None,
+        sync_first: bool = True,
+    ) -> list[HistoryDividendItem]:
+        """
+        Get dividends from local cache.
+
+        Args:
+            ticker: Optional ticker to filter by.
+            sync_first: If True, sync from API before returning cached data.
+
+        Returns:
+            List of HistoryDividendItem objects from cache.
+        """
+        data_store = self._get_data_store()
+        if not data_store:
+            # Fall back to API
+            return self.get_all_dividends(ticker=ticker)
+
+        if sync_first:
+            data_store.sync_dividends(self)
+
+        return data_store.get_dividends(ticker=ticker)
+
+    def get_cached_transactions(
+        self,
+        time_from: str | None = None,
+        sync_first: bool = True,
+    ) -> list[HistoryTransactionItem]:
+        """
+        Get transactions from local cache.
+
+        Args:
+            time_from: Optional start time filter (ISO 8601).
+            sync_first: If True, sync from API before returning cached data.
+
+        Returns:
+            List of HistoryTransactionItem objects from cache.
+        """
+        data_store = self._get_data_store()
+        if not data_store:
+            # Fall back to API
+            return self.get_all_transactions(time_from=time_from)
+
+        if sync_first:
+            data_store.sync_transactions(self)
+
+        return data_store.get_transactions(time_from=time_from)

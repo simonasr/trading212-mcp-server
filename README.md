@@ -16,6 +16,7 @@ The Trading212 MCP server is a [Model Context Protocol](https://modelcontextprot
 - **Error Handling**: Comprehensive custom exception hierarchy
 - **Auto-Pagination**: Helper methods to fetch all pages of paginated data
 - **Live Environment Safety**: Validation prevents unsupported order types in live trading
+- **Local Cache** (opt-in): SQLite caching for historical data to bypass API rate limits
 
 ## Requirements
 
@@ -126,6 +127,13 @@ Attempting to place limit, stop, or stop-limit orders in the live environment wi
 | `get_exports` | List all CSV exports |
 | `create_export` | Request a new CSV export |
 
+### Cache Management
+| Tool | Description |
+|------|-------------|
+| `sync_historical_data` | Sync historical data from API to local cache |
+| `clear_cache` | Clear local cache (all or specific table) |
+| `cache_stats` | Get cache statistics (counts, sizes, sync times) |
+
 ## Resources
 
 ### Account Resources
@@ -222,6 +230,60 @@ The client automatically:
 - Tracks rate limits per endpoint using `x-ratelimit-*` headers
 - Waits when rate limits are exhausted
 - Retries requests with exponential backoff on transient failures
+
+## Local Cache (Optional)
+
+The Trading212 MCP server includes an optional SQLite caching layer for historical data (orders, dividends, transactions). This is useful for:
+
+- **Bypassing API rate limits**: Historical data is cached locally after initial sync
+- **Richer analysis**: Access complete historical data without pagination limits
+- **Offline access**: Cached data is available without API connectivity
+
+### Enable Caching
+
+Set the following environment variables:
+
+```env
+ENABLE_LOCAL_CACHE=true
+DATABASE_PATH=./data/trading212.db  # Optional, this is the default
+```
+
+### Cache Management Tools
+
+| Tool | Description |
+|------|-------------|
+| `sync_historical_data` | Sync all or specific tables from API to local cache |
+| `clear_cache` | Clear cached data (all or specific table) |
+| `cache_stats` | Get cache statistics (record counts, sizes, sync times) |
+
+### Usage Examples
+
+```python
+# Sync all historical data
+sync_historical_data()
+
+# Sync only orders
+sync_historical_data(tables=["orders"])
+
+# Force full resync (clears cache first)
+sync_historical_data(force=True)
+
+# Check cache statistics
+cache_stats()
+
+# Clear all cached data
+clear_cache()
+
+# Clear only dividends
+clear_cache(table="dividends")
+```
+
+### How It Works
+
+1. When caching is enabled, the first call to `sync_historical_data` fetches all historical data from the API
+2. Subsequent syncs only fetch new records (incremental sync)
+3. Data is stored in a SQLite database at the configured path
+4. The cache is scoped by account ID, supporting multiple accounts
 
 ## Development
 

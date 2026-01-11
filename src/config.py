@@ -13,6 +13,8 @@ __all__ = [
     "TRADING212_API_SECRET",
     "ENVIRONMENT",
     "TRANSPORT",
+    "ENABLE_LOCAL_CACHE",
+    "DATABASE_PATH",
 ]
 
 load_dotenv(find_dotenv())
@@ -26,3 +28,10 @@ ENVIRONMENT: str = os.getenv("ENVIRONMENT", "demo")
 
 # MCP transport: "stdio" or "http"
 TRANSPORT: str = os.getenv("TRANSPORT", "stdio")
+
+# Local cache settings (opt-in)
+# Set ENABLE_LOCAL_CACHE=true to enable SQLite caching for historical data
+ENABLE_LOCAL_CACHE: bool = os.getenv("ENABLE_LOCAL_CACHE", "false").lower() == "true"
+
+# Path to SQLite database file
+DATABASE_PATH: str = os.getenv("DATABASE_PATH", "./data/trading212.db")
