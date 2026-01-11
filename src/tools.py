@@ -462,7 +462,7 @@ def get_position(ticker: str) -> Position:
 def get_order_history(
     cursor: int | None = None,
     ticker: str | None = None,
-    limit: int = 20,
+    limit: int = 8,
 ) -> list[HistoricalOrder]:
     """
     Fetch historical order data with optional pagination and filtering.
@@ -470,7 +470,8 @@ def get_order_history(
     Args:
         cursor: Pagination cursor for the next page of results.
         ticker: Optional ticker symbol to filter results.
-        limit: Maximum number of items to return (max: 50, default: 20).
+        limit: Maximum number of items to return. Note: Trading212 has a
+            server bug where limit > 8 causes 500 errors, so max is 8.
 
     Returns:
         List of HistoricalOrder objects.

@@ -48,6 +48,7 @@ from models import (
 )
 from utils.hishel_config import controller, storage
 from utils.rate_limiter import RateLimiter
+from utils.retry import with_retry
 
 __all__ = ["Trading212Client"]
 
@@ -121,14 +122,47 @@ class Trading212Client:
             storage=storage,
             controller=controller,
             headers=headers,
+            timeout=httpx.Timeout(10.0, connect=5.0),  # 10s read, 5s connect
         )
 
         # Initialize rate limiter
         self._rate_limiter = RateLimiter()
 
+        # Create a retry-wrapped request function
+        self._request_with_retry = with_retry(
+            max_retries=3,
+            base_delay=1.0,
+            max_delay=30.0,
+        )(self._raw_request)
+
+    def _raw_request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        """
+        Execute the raw HTTP request.
+
+        This method is wrapped with retry logic for transient errors
+        (500, 502, 503, 504, 408, 429).
+
+        Args:
+            method: HTTP method (GET, POST, DELETE, etc.).
+            url: API endpoint URL (relative to base_url).
+            **kwargs: Additional arguments passed to httpx.request.
+
+        Returns:
+            The httpx.Response object.
+
+        Raises:
+            httpx.HTTPStatusError: If the response has an error status code.
+        """
+        response = self.client.request(method, url, **kwargs)
+        response.raise_for_status()
+        return response
+
     def _make_request(self, method: str, url: str, **kwargs: Any) -> Any:
         """
         Make an HTTP request to the Trading212 API.
+
+        This method handles rate limiting, retries, and converts HTTP errors
+        to custom exceptions.
 
         Args:
             method: HTTP method (GET, POST, DELETE, etc.).
@@ -151,13 +185,10 @@ class Trading212Client:
         self._rate_limiter.wait_if_needed(url)
 
         try:
-            response = self.client.request(method, url, **kwargs)
+            response = self._request_with_retry(method, url, **kwargs)
 
             # Update rate limiter from response headers
             self._rate_limiter.update_from_headers(url, response.headers)
-
-            # Check for errors
-            response.raise_for_status()
 
             # Handle empty responses (e.g., DELETE)
             if not response.content:
@@ -166,6 +197,8 @@ class Trading212Client:
             return response.json()
 
         except httpx.HTTPStatusError as e:
+            # Update rate limiter even on errors (for 429 headers)
+            self._rate_limiter.update_from_headers(url, e.response.headers)
             self._handle_http_error(e)
 
     def _validate_order_type_for_environment(self, order_type: str) -> None:
@@ -533,7 +566,7 @@ class Trading212Client:
         self,
         cursor: int | None = None,
         ticker: str | None = None,
-        limit: int = 20,
+        limit: int = 8,
     ) -> list[HistoricalOrder]:
         """
         Fetch historical order data with pagination.
@@ -541,12 +574,14 @@ class Trading212Client:
         Args:
             cursor: Pagination cursor for the next page.
             ticker: Optional ticker to filter results.
-            limit: Maximum items to return (max: 50).
+            limit: Maximum items to return. Note: Trading212 has a server bug
+                where limit > 8 causes 500 errors, so default is 8.
 
         Returns:
             List of HistoricalOrder objects.
         """
-        params: dict[str, Any] = {"limit": limit}
+        # Trading212 bug: limit > 8 causes 500 errors
+        params: dict[str, Any] = {"limit": min(limit, 8)}
         if cursor is not None:
             params["cursor"] = cursor
         if ticker is not None:

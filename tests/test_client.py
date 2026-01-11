@@ -508,6 +508,88 @@ class TestClientErrorHandling:
         # Verify the rate limiter was updated
         assert "/equity/account/info" in client._rate_limiter._endpoints
 
+    def test_retries_on_500_server_error(
+        self,
+        mocker: "MockerFixture",
+        api_key: str,
+        api_secret: str,
+        sample_account_response: dict,
+    ) -> None:
+        """Should retry on 500 errors and succeed if a retry succeeds."""
+        from utils.client import Trading212Client
+
+        client = Trading212Client(api_key=api_key, api_secret=api_secret)
+
+        # First call fails with 500, second succeeds
+        error_response = MagicMock()
+        error_response.status_code = 500
+        error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server Error",
+            request=httpx.Request("GET", "http://test"),
+            response=error_response,
+        )
+
+        success_response = MagicMock()
+        success_response.json.return_value = sample_account_response
+        success_response.content = b'{"data": "test"}'
+        success_response.headers = {}
+        success_response.raise_for_status.return_value = None
+
+        # Mock sleep to avoid actual delays in tests
+        mocker.patch("time.sleep")
+
+        mocker.patch.object(
+            client.client,
+            "request",
+            side_effect=[error_response, success_response],
+        )
+
+        result = client.get_account_info()
+
+        assert result.currencyCode == "USD"
+        assert result.id == 12345678
+        # Verify request was called twice (initial + 1 retry)
+        assert client.client.request.call_count == 2
+
+    def test_raises_server_error_after_max_retries(
+        self,
+        mocker: "MockerFixture",
+        api_key: str,
+        api_secret: str,
+    ) -> None:
+        """Should raise ServerError after exhausting all retries."""
+        from exceptions import ServerError
+        from utils.client import Trading212Client
+
+        client = Trading212Client(api_key=api_key, api_secret=api_secret)
+
+        # All calls fail with 500
+        error_response = MagicMock()
+        error_response.status_code = 500
+        error_response.headers = {}
+        error_response.text = "Internal Server Error"
+        error_response.content = b""
+        error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server Error",
+            request=httpx.Request("GET", "http://test"),
+            response=error_response,
+        )
+
+        # Mock sleep to avoid actual delays in tests
+        mocker.patch("time.sleep")
+
+        mocker.patch.object(
+            client.client,
+            "request",
+            return_value=error_response,
+        )
+
+        with pytest.raises(ServerError):
+            client.get_account_info()
+
+        # Verify request was called 4 times (initial + 3 retries)
+        assert client.client.request.call_count == 4
+
 
 class TestClientPagination:
     """Tests for pagination helper methods."""
