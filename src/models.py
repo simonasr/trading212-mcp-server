@@ -52,6 +52,11 @@ __all__ = [
     "Exchange",
     "Tax",
     "HistoricalOrder",
+    "HistoricalOrderDetails",
+    "HistoricalOrderFill",
+    "HistoricalOrderInstrument",
+    "HistoricalOrderTax",
+    "HistoricalOrderWalletImpact",
     "HistoryDividendItem",
     "HistoryTransactionItem",
     "LimitRequest",
@@ -460,31 +465,136 @@ class Tax(BaseModel):
     timeCharged: datetime | None = None
 
 
-class HistoricalOrder(BaseModel):
-    """Historical order record."""
+class HistoricalOrderInstrument(BaseModel):
+    """Instrument details in historical order."""
 
-    dateCreated: datetime | None = None
-    dateExecuted: datetime | None = None
-    dateModified: datetime | None = None
-    executor: HistoricalOrderExecutorEnum | None = None
-    fillCost: float | None = None
-    fillId: int | None = None
-    fillPrice: float | None = None
-    fillResult: float | None = None
-    fillType: HistoricalOrderFillTypeEnum | None = None
-    filledQuantity: float | None = None
-    filledValue: float | None = None
-    id: int | None = None
-    limitPrice: float | None = None
-    orderedQuantity: float | None = None
-    orderedValue: float | None = None
-    parentOrder: int | None = None
-    status: HistoricalOrderStatusEnum | None = None
-    stopPrice: float | None = None
-    taxes: list[Tax] | None = None
     ticker: str | None = None
-    timeValidity: HistoricalOrderTimeValidityEnum | None = None
+    name: str | None = None
+    isin: str | None = None
+    currency: str | None = None
+
+
+class HistoricalOrderTax(BaseModel):
+    """Tax in historical order fill."""
+
+    name: TaxNameEnum | None = None
+    quantity: float | None = None
+    currency: str | None = None
+    chargedAt: datetime | None = None
+
+
+class HistoricalOrderWalletImpact(BaseModel):
+    """Wallet impact from order fill."""
+
+    currency: str | None = None
+    netValue: float | None = None
+    realisedProfitLoss: float | None = None
+    fxRate: float | None = None
+    taxes: list[HistoricalOrderTax] | None = None
+
+
+class HistoricalOrderFill(BaseModel):
+    """Fill details for historical order."""
+
+    id: int | None = None
+    quantity: float | None = None
+    price: float | None = None
+    type: str | None = None
+    tradingMethod: str | None = None
+    filledAt: datetime | None = None
+    walletImpact: HistoricalOrderWalletImpact | None = None
+
+
+class HistoricalOrderDetails(BaseModel):
+    """Order details in historical order response."""
+
+    id: int | None = None
+    strategy: str | None = None
     type: HistoricalOrderTypeEnum | None = None
+    ticker: str | None = None
+    quantity: float | None = None
+    filledQuantity: float | None = None
+    limitPrice: float | None = None
+    stopPrice: float | None = None
+    status: HistoricalOrderStatusEnum | None = None
+    currency: str | None = None
+    extendedHours: bool | None = None
+    initiatedFrom: HistoricalOrderExecutorEnum | None = None
+    side: str | None = None
+    createdAt: datetime | None = None
+    instrument: HistoricalOrderInstrument | None = None
+
+
+class HistoricalOrder(BaseModel):
+    """Historical order record (API response wrapper)."""
+
+    order: HistoricalOrderDetails | None = None
+    fill: HistoricalOrderFill | None = None
+
+    @property
+    def id(self) -> int | None:
+        """Get order ID."""
+        return self.order.id if self.order else None
+
+    @property
+    def ticker(self) -> str | None:
+        """Get ticker."""
+        return self.order.ticker if self.order else None
+
+    @property
+    def status(self) -> HistoricalOrderStatusEnum | None:
+        """Get order status."""
+        return self.order.status if self.order else None
+
+    @property
+    def type(self) -> HistoricalOrderTypeEnum | None:
+        """Get order type."""
+        return self.order.type if self.order else None
+
+    @property
+    def dateCreated(self) -> datetime | None:
+        """Get creation date."""
+        return self.order.createdAt if self.order else None
+
+    @property
+    def orderedQuantity(self) -> float | None:
+        """Get ordered quantity."""
+        return self.order.quantity if self.order else None
+
+    @property
+    def filledQuantity(self) -> float | None:
+        """Get filled quantity."""
+        return self.order.filledQuantity if self.order else None
+
+    @property
+    def limitPrice(self) -> float | None:
+        """Get limit price."""
+        return self.order.limitPrice if self.order else None
+
+    @property
+    def stopPrice(self) -> float | None:
+        """Get stop price."""
+        return self.order.stopPrice if self.order else None
+
+    @property
+    def fillPrice(self) -> float | None:
+        """Get fill price."""
+        return self.fill.price if self.fill else None
+
+    @property
+    def fillId(self) -> int | None:
+        """Get fill ID."""
+        return self.fill.id if self.fill else None
+
+    @property
+    def dateExecuted(self) -> datetime | None:
+        """Get execution date."""
+        return self.fill.filledAt if self.fill else None
+
+    @property
+    def executor(self) -> HistoricalOrderExecutorEnum | None:
+        """Get executor/initiator."""
+        return self.order.initiatedFrom if self.order else None
 
 
 class HistoryDividendItem(BaseModel):

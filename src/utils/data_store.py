@@ -187,12 +187,23 @@ class HistoricalDataStore:
         inserted = 0
 
         for order in orders:
-            # Serialize taxes to JSON
+            # Skip orders without an ID (shouldn't happen but be safe)
+            if order.id is None:
+                logger.warning("Skipping order without ID")
+                continue
+
+            # Extract taxes from fill.walletImpact if present
             taxes_json = None
-            if order.taxes:
-                taxes_json = json.dumps([t.model_dump() for t in order.taxes])
+            if order.fill and order.fill.walletImpact and order.fill.walletImpact.taxes:
+                taxes_json = json.dumps(
+                    [t.model_dump(mode="json") for t in order.fill.walletImpact.taxes]
+                )
 
             raw_json = order.model_dump_json()
+
+            # Extract values from nested structure
+            order_details = order.order
+            fill_details = order.fill
 
             try:
                 conn.execute(
@@ -206,28 +217,42 @@ class HistoricalDataStore:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        order.id,
+                        order_details.id if order_details else None,
                         self.account_id,
-                        order.ticker,
-                        order.type.value if order.type else None,
-                        order.status.value if order.status else None,
-                        order.executor.value if order.executor else None,
-                        order.orderedQuantity,
-                        order.filledQuantity,
-                        order.limitPrice,
-                        order.stopPrice,
-                        order.fillPrice,
-                        order.fillCost,
-                        order.fillResult,
-                        order.fillId,
-                        order.fillType.value if order.fillType else None,
-                        order.filledValue,
-                        order.orderedValue,
-                        order.parentOrder,
-                        order.timeValidity.value if order.timeValidity else None,
-                        order.dateCreated.isoformat() if order.dateCreated else None,
-                        order.dateExecuted.isoformat() if order.dateExecuted else None,
-                        order.dateModified.isoformat() if order.dateModified else None,
+                        order_details.ticker if order_details else None,
+                        order_details.type.value
+                        if order_details and order_details.type
+                        else None,
+                        order_details.status.value
+                        if order_details and order_details.status
+                        else None,
+                        order_details.initiatedFrom.value
+                        if order_details and order_details.initiatedFrom
+                        else None,
+                        order_details.quantity if order_details else None,
+                        order_details.filledQuantity if order_details else None,
+                        order_details.limitPrice if order_details else None,
+                        order_details.stopPrice if order_details else None,
+                        fill_details.price if fill_details else None,
+                        fill_details.walletImpact.netValue
+                        if fill_details and fill_details.walletImpact
+                        else None,
+                        fill_details.walletImpact.realisedProfitLoss
+                        if fill_details and fill_details.walletImpact
+                        else None,
+                        fill_details.id if fill_details else None,
+                        fill_details.tradingMethod if fill_details else None,
+                        None,  # filled_value - not in new API
+                        None,  # ordered_value - not in new API
+                        None,  # parent_order - not in new API
+                        None,  # time_validity - not in new API
+                        order_details.createdAt.isoformat()
+                        if order_details and order_details.createdAt
+                        else None,
+                        fill_details.filledAt.isoformat()
+                        if fill_details and fill_details.filledAt
+                        else None,
+                        None,  # date_modified - not in new API
                         taxes_json,
                         raw_json,
                     ),
@@ -235,7 +260,7 @@ class HistoricalDataStore:
                 inserted += 1
             except sqlite3.IntegrityError:
                 # Record already exists with same primary key
-                pass
+                logger.debug("Order %s already exists, skipping", order.id)
 
         conn.commit()
         return inserted

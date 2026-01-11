@@ -12,8 +12,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from models import (
     HistoricalOrder,
+    HistoricalOrderDetails,
+    HistoricalOrderExecutorEnum,
+    HistoricalOrderFill,
     HistoricalOrderStatusEnum,
     HistoricalOrderTypeEnum,
+    HistoricalOrderWalletImpact,
     HistoryDividendItem,
     HistoryTransactionItem,
     HistoryTransactionTypeEnum,
@@ -21,6 +25,45 @@ from models import (
     PaginatedResponseHistoryTransactionItem,
 )
 from utils.data_store import HistoricalDataStore
+
+
+def make_test_order(
+    order_id: int,
+    ticker: str = "AAPL_US_EQ",
+    order_type: HistoricalOrderTypeEnum = HistoricalOrderTypeEnum.MARKET,
+    status: HistoricalOrderStatusEnum = HistoricalOrderStatusEnum.FILLED,
+    quantity: float = 10.0,
+    filled_quantity: float = 10.0,
+    fill_price: float | None = 150.25,
+    created_at: datetime | None = None,
+    filled_at: datetime | None = None,
+) -> HistoricalOrder:
+    """Create a test HistoricalOrder with the new nested structure."""
+    order_details = HistoricalOrderDetails(
+        id=order_id,
+        ticker=ticker,
+        type=order_type,
+        status=status,
+        quantity=quantity,
+        filledQuantity=filled_quantity,
+        initiatedFrom=HistoricalOrderExecutorEnum.API,
+        createdAt=created_at or datetime(2024, 1, 15, 10, 30, 0),
+    )
+
+    fill_details = None
+    if fill_price is not None:
+        fill_details = HistoricalOrderFill(
+            id=order_id + 1000,
+            price=fill_price,
+            quantity=filled_quantity,
+            filledAt=filled_at or datetime(2024, 1, 15, 10, 30, 5),
+            walletImpact=HistoricalOrderWalletImpact(
+                netValue=fill_price * filled_quantity,
+                currency="USD",
+            ),
+        )
+
+    return HistoricalOrder(order=order_details, fill=fill_details)
 
 
 @pytest.fixture
@@ -57,17 +100,16 @@ def disabled_data_store(temp_db_path: str) -> HistoricalDataStore:
 @pytest.fixture
 def sample_order() -> HistoricalOrder:
     """Create a sample historical order."""
-    return HistoricalOrder(
-        id=1001,
+    return make_test_order(
+        order_id=1001,
         ticker="AAPL_US_EQ",
-        type=HistoricalOrderTypeEnum.MARKET,
+        order_type=HistoricalOrderTypeEnum.MARKET,
         status=HistoricalOrderStatusEnum.FILLED,
-        orderedQuantity=10.0,
-        filledQuantity=10.0,
-        fillPrice=150.25,
-        fillCost=1502.50,
-        dateCreated=datetime(2024, 1, 15, 10, 30, 0),
-        dateExecuted=datetime(2024, 1, 15, 10, 30, 5),
+        quantity=10.0,
+        filled_quantity=10.0,
+        fill_price=150.25,
+        created_at=datetime(2024, 1, 15, 10, 30, 0),
+        filled_at=datetime(2024, 1, 15, 10, 30, 5),
     )
 
 
@@ -170,10 +212,10 @@ class TestOrderOperations:
         data_store._upsert_orders([sample_order])
 
         # Insert another order with different ticker
-        other_order = HistoricalOrder(
-            id=1002,
+        other_order = make_test_order(
+            order_id=1002,
             ticker="MSFT_US_EQ",
-            type=HistoricalOrderTypeEnum.MARKET,
+            order_type=HistoricalOrderTypeEnum.MARKET,
             status=HistoricalOrderStatusEnum.FILLED,
         )
         data_store._upsert_orders([other_order])
@@ -305,10 +347,12 @@ class TestSyncOperations:
         mock_client = MagicMock()
 
         # First page returns 8 orders (full page)
-        page1_orders = [HistoricalOrder(id=i, ticker="AAPL_US_EQ") for i in range(8)]
+        page1_orders = [
+            make_test_order(order_id=i, ticker="AAPL_US_EQ") for i in range(8)
+        ]
         # Second page returns 3 orders (partial page = last page)
         page2_orders = [
-            HistoricalOrder(id=i + 8, ticker="AAPL_US_EQ") for i in range(3)
+            make_test_order(order_id=i + 8, ticker="AAPL_US_EQ") for i in range(3)
         ]
 
         mock_client.get_historical_order_data.side_effect = [
