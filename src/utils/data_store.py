@@ -298,7 +298,7 @@ class HistoricalDataStore:
             orders: List of orders to upsert.
 
         Returns:
-            Number of new records inserted.
+            Number of new records inserted (excludes updates to existing records).
         """
         if not orders:
             return 0
@@ -324,10 +324,12 @@ class HistoricalDataStore:
             )
 
             # Check if existing record has immutable status (immutability guard)
+            # Also used to distinguish insert vs update for accurate counting
             existing = conn.execute(
                 "SELECT status FROM orders WHERE id = ? AND account_id = ?",
                 (order.id, self.account_id),
             ).fetchone()
+            is_new = existing is None
 
             if existing:
                 existing_status = existing["status"]
@@ -408,7 +410,9 @@ class HistoricalDataStore:
                         raw_json,
                     ),
                 )
-                inserted += 1
+                # Only count true inserts, not replacements
+                if is_new:
+                    inserted += 1
             except sqlite3.IntegrityError:
                 # Record already exists with same primary key
                 logger.debug("Order %s already exists, skipping", order.id)
@@ -538,7 +542,7 @@ class HistoricalDataStore:
             dividends: List of dividends to upsert.
 
         Returns:
-            Number of new records inserted.
+            Number of new records inserted (excludes updates to existing records).
         """
         if not dividends:
             return 0
@@ -549,6 +553,13 @@ class HistoricalDataStore:
         for dividend in dividends:
             if not dividend.reference:
                 continue
+
+            # Check if record already exists (to distinguish insert vs update)
+            existing = conn.execute(
+                "SELECT 1 FROM dividends WHERE reference = ? AND account_id = ?",
+                (dividend.reference, self.account_id),
+            ).fetchone()
+            is_new = existing is None
 
             raw_json = dividend.model_dump_json()
 
@@ -573,7 +584,9 @@ class HistoricalDataStore:
                         raw_json,
                     ),
                 )
-                inserted += 1
+                # Only count true inserts, not replacements
+                if is_new:
+                    inserted += 1
             except sqlite3.IntegrityError as exc:
                 # Skip dividends that violate database integrity constraints,
                 # preserving the previous behavior of continuing with remaining items.
@@ -771,7 +784,7 @@ class HistoricalDataStore:
             transactions: List of transactions to upsert.
 
         Returns:
-            Number of new records inserted.
+            Number of new records inserted (excludes updates to existing records).
         """
         if not transactions:
             return 0
@@ -782,6 +795,13 @@ class HistoricalDataStore:
         for transaction in transactions:
             if not transaction.reference:
                 continue
+
+            # Check if record already exists (to distinguish insert vs update)
+            existing = conn.execute(
+                "SELECT 1 FROM transactions WHERE reference = ? AND account_id = ?",
+                (transaction.reference, self.account_id),
+            ).fetchone()
+            is_new = existing is None
 
             raw_json = transaction.model_dump_json()
 
@@ -803,7 +823,9 @@ class HistoricalDataStore:
                         raw_json,
                     ),
                 )
-                inserted += 1
+                # Only count true inserts, not replacements
+                if is_new:
+                    inserted += 1
             except sqlite3.IntegrityError as exc:
                 # Skip transactions that violate database constraints but log for diagnostics.
                 logger.warning(

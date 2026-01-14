@@ -317,8 +317,11 @@ class TestImmutabilityGuard:
         )
         count = data_store._upsert_orders([filled_order])
 
-        assert count == 1  # Should update
+        # count=0 because this is an update, not a new insert
+        # (records_added only counts true inserts)
+        assert count == 0
 
+        # Verify the order was actually updated
         orders = data_store.get_orders()
         assert len(orders) == 1
         assert orders[0].status == HistoricalOrderStatusEnum.FILLED
