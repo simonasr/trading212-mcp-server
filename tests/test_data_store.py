@@ -925,3 +925,46 @@ class TestIncrementalSync:
         assert result.records_fetched == 1
         # Total: 1 existing + 1 new (same timestamp, different ticker)
         assert result.total_records == 2
+
+    def test_incremental_dividends_handles_different_timezones(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should compare datetimes correctly across timezones.
+
+        Edge case: API might return timestamps with different timezone offsets.
+        String comparison would fail (e.g., '10:00:00Z' vs '15:00:00+05:00'),
+        but datetime comparison handles this correctly.
+        """
+        from datetime import timezone
+
+        # Add an existing dividend at 10:00 UTC
+        utc_time = datetime(2024, 3, 15, 10, 0, 0, tzinfo=UTC)
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-EXISTING",
+            amount=5.0,
+            paidOn=utc_time,
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API returns dividend at 16:00+05:00 (which is 11:00 UTC - 1 hour later)
+        mock_client = MagicMock()
+        tz_plus_5 = timezone(timedelta(hours=5))
+        different_tz_dividend = HistoryDividendItem(
+            ticker="MSFT_US_EQ",
+            reference="DIV-DIFFERENT-TZ",
+            amount=7.0,
+            # 16:00+05:00 = 11:00 UTC (1 hour after cached dividend)
+            paidOn=datetime(2024, 3, 15, 16, 0, 0, tzinfo=tz_plus_5),
+        )
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[different_tz_dividend],
+            nextPagePath=None,
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # Should include the dividend (it's newer when comparing actual time)
+        assert result.records_fetched == 1
+        assert result.total_records == 2

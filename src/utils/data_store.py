@@ -625,13 +625,15 @@ class HistoricalDataStore:
             )
 
         try:
-            # Determine time_from for incremental sync
-            time_from: str | None = None
+            # Determine cutoff datetime for incremental sync
+            # We parse to datetime for proper timezone-aware comparison
+            # (string comparison fails with different tz representations)
+            cutoff_dt: datetime | None = None
             if incremental:
                 newest_date = self._get_newest_record_date("dividends", "paid_on")
                 if newest_date:
-                    time_from = newest_date
-                    logger.info("Incremental dividends sync from %s", time_from)
+                    cutoff_dt = datetime.fromisoformat(newest_date)
+                    logger.info("Incremental dividends sync from %s", newest_date)
 
             # Fetch dividends from API (paginated)
             all_dividends: list[HistoryDividendItem] = []
@@ -645,11 +647,10 @@ class HistoricalDataStore:
                 # For incremental sync, filter client-side (API lacks time_from param)
                 # This stops pagination early once we hit already-cached dates
                 # Use >= to include records with same timestamp (upsert handles duplicates)
-                if time_from:
+                # Compare datetime objects directly (handles timezone differences)
+                if cutoff_dt:
                     new_items = [
-                        d
-                        for d in response.items
-                        if d.paidOn and d.paidOn.isoformat() >= time_from
+                        d for d in response.items if d.paidOn and d.paidOn >= cutoff_dt
                     ]
                     all_dividends.extend(new_items)
                     # Stop when we encounter older records (already in cache)
