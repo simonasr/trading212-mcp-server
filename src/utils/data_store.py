@@ -40,6 +40,14 @@ IMMUTABLE_ORDER_STATUSES: frozenset[str] = frozenset(
     {"FILLED", "CANCELLED", "REJECTED"}
 )
 
+# Valid table names and their date columns (whitelist for SQL injection prevention)
+VALID_TABLES: frozenset[str] = frozenset({"orders", "dividends", "transactions"})
+VALID_DATE_COLUMNS: dict[str, str] = {
+    "orders": "date_created",
+    "dividends": "paid_on",
+    "transactions": "datetime",
+}
+
 
 @dataclass
 class SyncResult:
@@ -217,15 +225,24 @@ class HistoricalDataStore:
         """Get the newest record date from a table.
 
         Args:
-            table: Table name.
-            date_column: Column containing the date.
+            table: Table name (must be in VALID_TABLES).
+            date_column: Column containing the date (must match VALID_DATE_COLUMNS).
 
         Returns:
             ISO 8601 date string of newest record, or None if empty.
+
+        Raises:
+            ValueError: If table or date_column is not in whitelist.
         """
+        # Validate against whitelist to prevent SQL injection
+        if table not in VALID_TABLES:
+            raise ValueError(f"Invalid table: {table}")
+        if date_column != VALID_DATE_COLUMNS.get(table):
+            raise ValueError(f"Invalid date_column for {table}: {date_column}")
+
         conn = self._get_connection()
         row = conn.execute(
-            f"SELECT MAX({date_column}) as newest FROM {table} WHERE account_id = ?",
+            f"SELECT MAX({date_column}) as newest FROM {table} WHERE account_id = ?",  # noqa: S608
             (self.account_id,),
         ).fetchone()
         return row["newest"] if row and row["newest"] else None
@@ -577,12 +594,14 @@ class HistoricalDataStore:
     ) -> SyncResult:
         """Sync dividends from the API to the local cache.
 
-        Supports incremental sync - if cache has existing data, only fetches
-        dividends paid after the newest cached record.
+        Note: The dividends API does not support server-side time filtering
+        (unlike transactions). Incremental mode uses client-side filtering:
+        pages are fetched until we encounter records older than our cache.
+        This reduces API calls when only a few new dividends exist.
 
         Args:
             api_client: Trading212 API client instance.
-            incremental: If True, only fetch new records since last sync.
+            incremental: If True, stop fetching when we reach already-cached dates.
                         If False, fetch all records (full sync).
 
         Returns:
@@ -616,7 +635,8 @@ class HistoricalDataStore:
                 if not response.items:
                     break
 
-                # For incremental sync, filter to only new records
+                # For incremental sync, filter client-side (API lacks time_from param)
+                # This stops pagination early once we hit already-cached dates
                 if time_from:
                     new_items = [
                         d
@@ -624,7 +644,7 @@ class HistoricalDataStore:
                         if d.paidOn and d.paidOn.isoformat() > time_from
                     ]
                     all_dividends.extend(new_items)
-                    # If we got fewer items than expected, we've passed the cutoff
+                    # Stop when we encounter older records (already in cache)
                     if len(new_items) < len(response.items):
                         logger.debug(
                             "Reached cached records, stopping incremental sync"
@@ -980,12 +1000,21 @@ class HistoricalDataStore:
         """Get date range coverage for a table.
 
         Args:
-            table: Table name (orders, dividends, transactions).
-            date_column: Column containing the date.
+            table: Table name (must be in VALID_TABLES).
+            date_column: Column containing the date (must match VALID_DATE_COLUMNS).
 
         Returns:
             DataCoverage with count and date range, or None if empty.
+
+        Raises:
+            ValueError: If table or date_column is not in whitelist.
         """
+        # Validate against whitelist to prevent SQL injection
+        if table not in VALID_TABLES:
+            raise ValueError(f"Invalid table: {table}")
+        if date_column != VALID_DATE_COLUMNS.get(table):
+            raise ValueError(f"Invalid date_column for {table}: {date_column}")
+
         conn = self._get_connection()
         row = conn.execute(
             f"""
@@ -995,7 +1024,7 @@ class HistoricalDataStore:
                 MAX({date_column}) as newest
             FROM {table}
             WHERE account_id = ?
-            """,
+            """,  # noqa: S608
             (self.account_id,),
         ).fetchone()
 
