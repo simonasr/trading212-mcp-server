@@ -58,6 +58,7 @@ You are an AI assistant specialized in Python development. Your approach emphasi
 - **Key env vars**: `TRADING212_API_KEY`, `TRADING212_API_SECRET`, `ENVIRONMENT`, `ENABLE_LOCAL_CACHE`, `DATABASE_PATH`, `CACHE_FRESHNESS_MINUTES`.
 - **SQLite cache** uses incremental sync for dividends/transactions; orders always do full sync (API limitation).
 - **Cache freshness**: Configurable via `CACHE_FRESHNESS_MINUTES` (default: 60, 0=always sync, -1=never auto-sync).
+- **Datetime conventions**: Sync metadata uses naive local time (`datetime.now()`); API data uses timezone-aware datetimes (`tzinfo=UTC`). Compare datetime objects directly, not ISO strings.
 - **MCP tools** are in `src/tools.py`, **prompts** in `src/prompts.py`, **resources** in `src/resources.py`.
 - **API client** is in `src/utils/client.py`, **data store** in `src/utils/data_store.py`.
 

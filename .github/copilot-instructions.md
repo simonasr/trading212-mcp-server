@@ -92,6 +92,23 @@ When cache is enabled (`ENABLE_LOCAL_CACHE=true`):
 - **Dividends/Transactions**: Incremental sync (only fetches new records since last sync)
 - **Force full resync**: Use `sync_historical_data(force=True)` to clear cache and re-fetch all data
 
+### Datetime Handling Conventions
+
+This project uses two datetime conventions:
+
+1. **Sync metadata timestamps** (e.g., `last_sync` in `sync_metadata` table):
+   - Stored as **naive local time** via `datetime.now().isoformat()`
+   - `is_cache_fresh()` defensively strips timezone info before comparison
+   - Tests should use `datetime.now().isoformat()` for these values
+
+2. **API data timestamps** (e.g., `paidOn`, `dateCreated` from Trading212 API):
+   - Come from API as **timezone-aware** datetimes (typically UTC)
+   - Stored in SQLite as ISO 8601 strings preserving timezone
+   - Incremental sync compares datetime objects directly (not strings) for proper timezone handling
+   - Tests should use `datetime(..., tzinfo=UTC)` for API-like data
+
+The `_get_newest_record_date()` method returns ISO 8601 strings as stored (may have timezone info). Callers parse these with `datetime.fromisoformat()` and compare datetime objects directly, which handles mixed timezone representations correctly.
+
 ## Common Tasks
 
 ### Adding a New MCP Tool
