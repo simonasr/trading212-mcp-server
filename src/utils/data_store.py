@@ -200,6 +200,9 @@ class HistoricalDataStore:
 
         try:
             last_sync = datetime.fromisoformat(metadata["last_sync"])
+            # Ensure both datetimes are naive for comparison (we store naive local time)
+            if last_sync.tzinfo is not None:
+                last_sync = last_sync.replace(tzinfo=None)
             age = datetime.now() - last_sync
             is_fresh = age < timedelta(minutes=freshness_minutes)
             if is_fresh:
