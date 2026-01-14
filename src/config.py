@@ -15,6 +15,7 @@ __all__ = [
     "TRANSPORT",
     "ENABLE_LOCAL_CACHE",
     "DATABASE_PATH",
+    "CACHE_FRESHNESS_MINUTES",
 ]
 
 load_dotenv(find_dotenv())
@@ -35,3 +36,8 @@ ENABLE_LOCAL_CACHE: bool = os.getenv("ENABLE_LOCAL_CACHE", "false").lower() == "
 
 # Path to SQLite database file
 DATABASE_PATH: str = os.getenv("DATABASE_PATH", "./data/trading212.db")
+
+# Cache freshness threshold in minutes
+# If cache was synced within this time, skip API calls and use cached data
+# Set to 0 to always sync, -1 to never auto-sync (manual only)
+CACHE_FRESHNESS_MINUTES: int = int(os.getenv("CACHE_FRESHNESS_MINUTES", "60"))
