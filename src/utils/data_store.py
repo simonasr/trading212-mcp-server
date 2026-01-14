@@ -177,22 +177,16 @@ class HistoricalDataStore:
         if not self.enabled:
             return False
 
-        # Handle special values
-        if max_age_minutes == 0:
-            return False  # Force sync
-        if max_age_minutes == -1:
-            return True  # Never sync automatically
-
-        # Use config default if not specified
+        # Use provided value or config default
         freshness_minutes = (
             max_age_minutes if max_age_minutes is not None else CACHE_FRESHNESS_MINUTES
         )
 
-        # Check if config disables auto-sync
+        # Handle special values (works for both explicit param and config default)
         if freshness_minutes == -1:
-            return True
+            return True  # Never sync automatically
         if freshness_minutes == 0:
-            return False
+            return False  # Force sync
 
         metadata = self._get_sync_metadata(table)
         if not metadata or not metadata.get("last_sync"):
