@@ -650,12 +650,27 @@ class HistoricalDataStore:
                 # timestamp, and we don't want to miss any (upsert handles duplicates)
                 # Compare datetime objects directly (handles timezone differences)
                 if cutoff_dt:
-                    new_items = [
-                        d for d in response.items if d.paidOn and d.paidOn >= cutoff_dt
+                    # Separate items: those with dates we can compare, those without
+                    items_with_date = [d for d in response.items if d.paidOn]
+                    items_without_date = [d for d in response.items if not d.paidOn]
+
+                    # Filter dated items to only include new ones
+                    # Note: d.paidOn is guaranteed non-None from items_with_date filter,
+                    # but mypy doesn't narrow types across list comprehensions
+                    new_dated_items = [
+                        d
+                        for d in items_with_date
+                        if d.paidOn is not None and d.paidOn >= cutoff_dt
                     ]
-                    all_dividends.extend(new_items)
-                    # Stop when we encounter older records (already in cache)
-                    if len(new_items) < len(response.items):
+
+                    # Always include items without dates (can't determine age)
+                    # and new dated items
+                    all_dividends.extend(new_dated_items)
+                    all_dividends.extend(items_without_date)
+
+                    # Stop when we encounter older dated records (already in cache)
+                    # Only compare against items that have dates for this decision
+                    if len(new_dated_items) < len(items_with_date):
                         logger.debug(
                             "Reached cached records, stopping incremental sync"
                         )

@@ -970,3 +970,58 @@ class TestIncrementalSync:
         # Should include the dividend (it's newer when comparing actual time)
         assert result.records_fetched == 1
         assert result.total_records == 2
+
+    def test_incremental_dividends_includes_none_paid_on(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should include dividends with paidOn=None.
+
+        Edge case: Some dividends may have None paidOn dates. These should
+        always be included since we can't determine their age, and should
+        not cause premature pagination stop.
+        """
+        # Add an existing dividend with a known date
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-EXISTING",
+            amount=5.0,
+            paidOn=datetime(2024, 3, 15, 10, 0, 0, tzinfo=UTC),
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API returns: 1 new dated + 1 None paidOn + 1 old dated
+        mock_client = MagicMock()
+        new_dividend = HistoryDividendItem(
+            ticker="MSFT_US_EQ",
+            reference="DIV-NEW",
+            amount=10.0,
+            paidOn=datetime(2024, 6, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        none_date_dividend = HistoryDividendItem(
+            ticker="GOOG_US_EQ",
+            reference="DIV-NO-DATE",
+            amount=3.0,
+            paidOn=None,  # No date!
+        )
+        old_dividend = HistoryDividendItem(
+            ticker="AMZN_US_EQ",
+            reference="DIV-OLD",
+            amount=2.0,
+            paidOn=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # Before cutoff
+        )
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[new_dividend, none_date_dividend, old_dividend],
+            nextPagePath="cursor=123",
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # records_fetched = all 3 items from API
+        assert result.records_fetched == 3
+        # records_added = 1 new dated + 1 None date = 2 (old is filtered)
+        assert result.records_added == 2
+        # Total: 1 existing + 2 new = 3
+        assert result.total_records == 3
+        # Pagination stopped due to old dated record
+        assert mock_client.get_dividends.call_count == 1
