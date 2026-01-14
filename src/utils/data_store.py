@@ -11,10 +11,11 @@ import logging
 import os
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from config import CACHE_FRESHNESS_MINUTES
 from models import (
     HistoricalOrder,
     HistoryDividendItem,
@@ -145,6 +146,89 @@ class HistoricalDataStore:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+
+    # ---- Freshness Methods ----
+
+    def is_cache_fresh(
+        self,
+        table: str,
+        max_age_minutes: int | None = None,
+    ) -> bool:
+        """Check if cache is fresh enough to skip API sync.
+
+        Args:
+            table: Table name ("orders", "dividends", "transactions").
+            max_age_minutes: Maximum age in minutes for cache to be considered fresh.
+                            None = use config default (CACHE_FRESHNESS_MINUTES).
+                            0 = never fresh (always sync).
+                            -1 = always fresh (never sync automatically).
+
+        Returns:
+            True if cache is fresh (no sync needed), False otherwise.
+        """
+        if not self.enabled:
+            return False
+
+        # Handle special values
+        if max_age_minutes == 0:
+            return False  # Force sync
+        if max_age_minutes == -1:
+            return True  # Never sync automatically
+
+        # Use config default if not specified
+        freshness_minutes = (
+            max_age_minutes if max_age_minutes is not None else CACHE_FRESHNESS_MINUTES
+        )
+
+        # Check if config disables auto-sync
+        if freshness_minutes == -1:
+            return True
+        if freshness_minutes == 0:
+            return False
+
+        metadata = self._get_sync_metadata(table)
+        if not metadata or not metadata.get("last_sync"):
+            return False  # Never synced
+
+        try:
+            last_sync = datetime.fromisoformat(metadata["last_sync"])
+            age = datetime.now() - last_sync
+            is_fresh = age < timedelta(minutes=freshness_minutes)
+            if is_fresh:
+                logger.debug(
+                    "Cache for %s is fresh (age: %s, max: %d min)",
+                    table,
+                    age,
+                    freshness_minutes,
+                )
+            else:
+                logger.debug(
+                    "Cache for %s is stale (age: %s, max: %d min)",
+                    table,
+                    age,
+                    freshness_minutes,
+                )
+            return is_fresh
+        except (ValueError, TypeError) as e:
+            logger.warning("Failed to parse last_sync timestamp: %s", e)
+            return False
+
+    def _get_newest_record_date(self, table: str, date_column: str) -> str | None:
+        """Get the newest record date from a table.
+
+        Args:
+            table: Table name.
+            date_column: Column containing the date.
+
+        Returns:
+            ISO 8601 date string of newest record, or None if empty.
+        """
+        conn = self._get_connection()
+        row = conn.execute(
+            f"SELECT MAX({date_column}) as newest FROM {table} WHERE account_id = ?",
+            (self.account_id,),
+        ).fetchone()
+        return row["newest"] if row and row["newest"] else None
 
     # ---- Order Methods ----
 
@@ -486,11 +570,20 @@ class HistoricalDataStore:
         conn.commit()
         return inserted
 
-    def sync_dividends(self, api_client: Trading212Client) -> SyncResult:
+    def sync_dividends(
+        self,
+        api_client: Trading212Client,
+        incremental: bool = True,
+    ) -> SyncResult:
         """Sync dividends from the API to the local cache.
+
+        Supports incremental sync - if cache has existing data, only fetches
+        dividends paid after the newest cached record.
 
         Args:
             api_client: Trading212 API client instance.
+            incremental: If True, only fetch new records since last sync.
+                        If False, fetch all records (full sync).
 
         Returns:
             SyncResult with details about the sync operation.
@@ -506,7 +599,15 @@ class HistoricalDataStore:
             )
 
         try:
-            # Fetch all dividends from API (paginated)
+            # Determine time_from for incremental sync
+            time_from: str | None = None
+            if incremental:
+                newest_date = self._get_newest_record_date("dividends", "paid_on")
+                if newest_date:
+                    time_from = newest_date
+                    logger.info("Incremental dividends sync from %s", time_from)
+
+            # Fetch dividends from API (paginated)
             all_dividends: list[HistoryDividendItem] = []
             cursor: int | None = None
 
@@ -515,7 +616,22 @@ class HistoricalDataStore:
                 if not response.items:
                     break
 
-                all_dividends.extend(response.items)
+                # For incremental sync, filter to only new records
+                if time_from:
+                    new_items = [
+                        d
+                        for d in response.items
+                        if d.paidOn and d.paidOn.isoformat() > time_from
+                    ]
+                    all_dividends.extend(new_items)
+                    # If we got fewer items than expected, we've passed the cutoff
+                    if len(new_items) < len(response.items):
+                        logger.debug(
+                            "Reached cached records, stopping incremental sync"
+                        )
+                        break
+                else:
+                    all_dividends.extend(response.items)
 
                 # Check for next page
                 if not response.nextPagePath:
@@ -654,11 +770,20 @@ class HistoricalDataStore:
         conn.commit()
         return inserted
 
-    def sync_transactions(self, api_client: Trading212Client) -> SyncResult:
+    def sync_transactions(
+        self,
+        api_client: Trading212Client,
+        incremental: bool = True,
+    ) -> SyncResult:
         """Sync transactions from the API to the local cache.
+
+        Supports incremental sync - if cache has existing data, only fetches
+        transactions after the newest cached record.
 
         Args:
             api_client: Trading212 API client instance.
+            incremental: If True, only fetch new records since last sync.
+                        If False, fetch all records (full sync).
 
         Returns:
             SyncResult with details about the sync operation.
@@ -674,10 +799,19 @@ class HistoricalDataStore:
             )
 
         try:
-            # Fetch all transactions from API (paginated)
+            # Determine time_from for incremental sync
+            # The transactions API has a time_from parameter we can use directly
+            api_time_from: str | None = None
+            if incremental:
+                newest_date = self._get_newest_record_date("transactions", "datetime")
+                if newest_date:
+                    api_time_from = newest_date
+                    logger.info("Incremental transactions sync from %s", api_time_from)
+
+            # Fetch transactions from API (paginated)
             all_transactions: list[HistoryTransactionItem] = []
             cursor: str | None = None
-            time_from: str | None = None
+            time_from: str | None = api_time_from  # Use for initial request
 
             while True:
                 response = api_client.get_history_transactions(

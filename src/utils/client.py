@@ -856,10 +856,13 @@ class Trading212Client:
         """
         Sync historical data from API to local cache.
 
+        Uses incremental sync by default - only fetches new records since
+        the last sync. Use force=True to clear cache and do a full re-sync.
+
         Args:
             tables: Which tables to sync ("orders", "dividends", "transactions").
                     If None, syncs all tables.
-            force: If True, clears cache before syncing.
+            force: If True, clears cache before syncing (full re-sync).
 
         Returns:
             Dictionary mapping table names to their SyncResult.
@@ -892,14 +895,22 @@ class Trading212Client:
                     f"Valid tables are: {', '.join(valid_tables)}"
                 )
 
+        # Incremental sync: only fetch new records unless force=True
+        incremental = not force
+
         results: dict[str, SyncResult] = {}
         for table in tables_to_sync:
             if table == "orders":
+                # Orders don't support incremental sync well due to API limitations
                 results["orders"] = data_store.sync_orders(self)
             elif table == "dividends":
-                results["dividends"] = data_store.sync_dividends(self)
+                results["dividends"] = data_store.sync_dividends(
+                    self, incremental=incremental
+                )
             elif table == "transactions":
-                results["transactions"] = data_store.sync_transactions(self)
+                results["transactions"] = data_store.sync_transactions(
+                    self, incremental=incremental
+                )
 
         return results
 
@@ -954,14 +965,17 @@ class Trading212Client:
     def get_cached_orders(
         self,
         ticker: str | None = None,
-        sync_first: bool = True,
+        max_age_minutes: int | None = None,
     ) -> list[HistoricalOrder]:
         """
-        Get historical orders from local cache.
+        Get historical orders from local cache with automatic freshness check.
 
         Args:
             ticker: Optional ticker to filter by.
-            sync_first: If True, sync from API before returning cached data.
+            max_age_minutes: Maximum age of cache in minutes before auto-sync.
+                            None = use config default (CACHE_FRESHNESS_MINUTES).
+                            0 = always sync (force refresh).
+                            -1 = never auto-sync (cache only).
 
         Returns:
             List of HistoricalOrder objects from cache.
@@ -971,7 +985,8 @@ class Trading212Client:
             # Fall back to API (extract items from paginated response)
             return self.get_historical_order_data(ticker=ticker).items
 
-        if sync_first:
+        # Sync if cache is stale
+        if not data_store.is_cache_fresh("orders", max_age_minutes):
             data_store.sync_orders(self)
 
         return data_store.get_orders(ticker=ticker)
@@ -979,14 +994,17 @@ class Trading212Client:
     def get_cached_dividends(
         self,
         ticker: str | None = None,
-        sync_first: bool = True,
+        max_age_minutes: int | None = None,
     ) -> list[HistoryDividendItem]:
         """
-        Get dividends from local cache.
+        Get dividends from local cache with automatic freshness check.
 
         Args:
             ticker: Optional ticker to filter by.
-            sync_first: If True, sync from API before returning cached data.
+            max_age_minutes: Maximum age of cache in minutes before auto-sync.
+                            None = use config default (CACHE_FRESHNESS_MINUTES).
+                            0 = always sync (force refresh).
+                            -1 = never auto-sync (cache only).
 
         Returns:
             List of HistoryDividendItem objects from cache.
@@ -996,22 +1014,26 @@ class Trading212Client:
             # Fall back to API
             return self.get_all_dividends(ticker=ticker)
 
-        if sync_first:
-            data_store.sync_dividends(self)
+        # Sync if cache is stale (uses incremental sync by default)
+        if not data_store.is_cache_fresh("dividends", max_age_minutes):
+            data_store.sync_dividends(self, incremental=True)
 
         return data_store.get_dividends(ticker=ticker)
 
     def get_cached_transactions(
         self,
         time_from: str | None = None,
-        sync_first: bool = True,
+        max_age_minutes: int | None = None,
     ) -> list[HistoryTransactionItem]:
         """
-        Get transactions from local cache.
+        Get transactions from local cache with automatic freshness check.
 
         Args:
             time_from: Optional start time filter (ISO 8601).
-            sync_first: If True, sync from API before returning cached data.
+            max_age_minutes: Maximum age of cache in minutes before auto-sync.
+                            None = use config default (CACHE_FRESHNESS_MINUTES).
+                            0 = always sync (force refresh).
+                            -1 = never auto-sync (cache only).
 
         Returns:
             List of HistoryTransactionItem objects from cache.
@@ -1021,7 +1043,8 @@ class Trading212Client:
             # Fall back to API
             return self.get_all_transactions(time_from=time_from)
 
-        if sync_first:
-            data_store.sync_transactions(self)
+        # Sync if cache is stale (uses incremental sync by default)
+        if not data_store.is_cache_fresh("transactions", max_age_minutes):
+            data_store.sync_transactions(self, incremental=True)
 
         return data_store.get_transactions(time_from=time_from)

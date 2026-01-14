@@ -81,6 +81,7 @@ src/
 - `TRADING212_ENV` - `demo` (default) or `live`
 - `ENABLE_LOCAL_CACHE` - Enable SQLite caching for historical data
 - `DATABASE_PATH` - Path to SQLite database
+- `CACHE_FRESHNESS_MINUTES` - Auto-sync threshold (default: 60, 0=always sync, -1=never auto-sync)
 
 ## Common Tasks
 

@@ -714,3 +714,121 @@ class TestSyncMetadata:
         """Should return None for nonexistent metadata."""
         metadata = data_store._get_sync_metadata("nonexistent")
         assert metadata is None
+
+
+class TestCacheFreshness:
+    """Tests for cache freshness checking."""
+
+    def test_cache_never_synced_is_not_fresh(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Cache should not be fresh if never synced."""
+        assert data_store.is_cache_fresh("orders") is False
+        assert data_store.is_cache_fresh("dividends") is False
+        assert data_store.is_cache_fresh("transactions") is False
+
+    def test_recently_synced_cache_is_fresh(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Cache should be fresh if synced recently."""
+        # Sync metadata with current timestamp
+        now = datetime.now().isoformat()
+        data_store._update_sync_metadata("orders", now, 10)
+
+        # Default freshness is 60 minutes, so recently synced should be fresh
+        assert data_store.is_cache_fresh("orders") is True
+
+    def test_max_age_zero_always_returns_false(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """max_age_minutes=0 should always return False (force sync)."""
+        now = datetime.now().isoformat()
+        data_store._update_sync_metadata("orders", now, 10)
+
+        # Even with fresh cache, max_age=0 should force sync
+        assert data_store.is_cache_fresh("orders", max_age_minutes=0) is False
+
+    def test_max_age_negative_one_always_returns_true(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """max_age_minutes=-1 should always return True (never auto-sync)."""
+        # Even without any sync metadata, -1 should return True
+        assert data_store.is_cache_fresh("orders", max_age_minutes=-1) is True
+
+    def test_disabled_store_is_never_fresh(
+        self, disabled_data_store: HistoricalDataStore
+    ) -> None:
+        """Disabled store should never be considered fresh."""
+        assert disabled_data_store.is_cache_fresh("orders") is False
+
+    def test_custom_max_age_minutes(self, data_store: HistoricalDataStore) -> None:
+        """Should respect custom max_age_minutes parameter."""
+        from datetime import timedelta
+
+        # Set sync time to 30 minutes ago
+        thirty_min_ago = (datetime.now() - timedelta(minutes=30)).isoformat()
+        data_store._update_sync_metadata("dividends", thirty_min_ago, 10)
+
+        # Should be fresh with 60 minute threshold
+        assert data_store.is_cache_fresh("dividends", max_age_minutes=60) is True
+
+        # Should be stale with 15 minute threshold
+        assert data_store.is_cache_fresh("dividends", max_age_minutes=15) is False
+
+
+class TestIncrementalSync:
+    """Tests for incremental sync functionality."""
+
+    def test_get_newest_record_date_empty_table(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Should return None for empty table."""
+        result = data_store._get_newest_record_date("dividends", "paid_on")
+        assert result is None
+
+    def test_get_newest_record_date_with_data(
+        self,
+        data_store: HistoricalDataStore,
+        sample_dividend: HistoryDividendItem,
+    ) -> None:
+        """Should return the newest date from table."""
+        data_store._upsert_dividends([sample_dividend])
+
+        result = data_store._get_newest_record_date("dividends", "paid_on")
+
+        # Should return the date from our sample dividend
+        assert result is not None
+
+    def test_incremental_dividends_sync_uses_time_from(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should only fetch new dividends."""
+        # First, add an existing dividend
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-OLD",
+            amount=5.0,
+            paidOn=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API client that returns new dividend
+        mock_client = MagicMock()
+        new_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-NEW",
+            amount=10.0,
+            paidOn=datetime(2024, 6, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[new_dividend],
+            nextPagePath=None,
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # Should have fetched 1 new record
+        assert result.records_fetched == 1
+        # Total should include both old and new
+        assert result.total_records == 2
