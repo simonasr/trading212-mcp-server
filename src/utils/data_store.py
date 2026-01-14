@@ -640,11 +640,12 @@ class HistoricalDataStore:
 
                 # For incremental sync, filter client-side (API lacks time_from param)
                 # This stops pagination early once we hit already-cached dates
+                # Use >= to include records with same timestamp (upsert handles duplicates)
                 if time_from:
                     new_items = [
                         d
                         for d in response.items
-                        if d.paidOn and d.paidOn.isoformat() > time_from
+                        if d.paidOn and d.paidOn.isoformat() >= time_from
                     ]
                     all_dividends.extend(new_items)
                     # Stop when we encounter older records (already in cache)

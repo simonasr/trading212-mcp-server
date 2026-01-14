@@ -885,3 +885,43 @@ class TestIncrementalSync:
         assert result.total_records == 3
         # API should only be called once (pagination stopped due to old record)
         assert mock_client.get_dividends.call_count == 1
+
+    def test_incremental_dividends_includes_same_timestamp(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should include dividends with same timestamp as cached.
+
+        Edge case: a new dividend from a different ticker could have the exact
+        same timestamp as the newest cached dividend. We use >= comparison to
+        ensure these aren't missed (upsert handles any true duplicates).
+        """
+        # Add an existing dividend with a known timestamp
+        cached_timestamp = datetime(2024, 3, 15, 10, 0, 0, tzinfo=UTC)
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-EXISTING",
+            amount=5.0,
+            paidOn=cached_timestamp,
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API returns dividend with SAME timestamp but different ticker
+        mock_client = MagicMock()
+        same_timestamp_dividend = HistoryDividendItem(
+            ticker="MSFT_US_EQ",  # Different ticker
+            reference="DIV-SAME-TIME",
+            amount=7.0,
+            paidOn=cached_timestamp,  # Same timestamp as cached
+        )
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[same_timestamp_dividend],
+            nextPagePath=None,
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # Should include the dividend with same timestamp
+        assert result.records_fetched == 1
+        # Total: 1 existing + 1 new (same timestamp, different ticker)
+        assert result.total_records == 2
