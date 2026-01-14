@@ -474,8 +474,14 @@ class HistoricalDataStore:
                     ),
                 )
                 inserted += 1
-            except sqlite3.IntegrityError:
-                pass
+            except sqlite3.IntegrityError as exc:
+                # Skip dividends that violate database integrity constraints,
+                # preserving the previous behavior of continuing with remaining items.
+                logger.warning(
+                    "Failed to upsert dividend with reference %s: %s",
+                    dividend.reference,
+                    exc,
+                )
 
         conn.commit()
         return inserted
@@ -637,8 +643,13 @@ class HistoricalDataStore:
                     ),
                 )
                 inserted += 1
-            except sqlite3.IntegrityError:
-                pass
+            except sqlite3.IntegrityError as exc:
+                # Skip transactions that violate database constraints but log for diagnostics.
+                logger.warning(
+                    "Failed to upsert transaction with reference %s: %s",
+                    transaction.reference,
+                    exc,
+                )
 
         conn.commit()
         return inserted
