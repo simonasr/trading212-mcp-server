@@ -879,8 +879,10 @@ class TestIncrementalSync:
         # Incremental sync
         result = data_store.sync_dividends(mock_client, incremental=True)
 
-        # Should have fetched only the 2 new dividends (filtered out old)
-        assert result.records_fetched == 2
+        # records_fetched = total items retrieved from API (before filtering)
+        assert result.records_fetched == 3
+        # records_added = new records added to cache (after filtering old)
+        assert result.records_added == 2
         # Total: 1 existing + 2 new = 3
         assert result.total_records == 3
         # API should only be called once (pagination stopped due to old record)

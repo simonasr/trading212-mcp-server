@@ -633,12 +633,15 @@ class HistoricalDataStore:
 
             # Fetch dividends from API (paginated)
             all_dividends: list[HistoryDividendItem] = []
+            total_api_records = 0  # Track total items retrieved from API
             cursor: int | None = None
 
             while True:
                 response = api_client.get_dividends(cursor=cursor, limit=50)
                 if not response.items:
                     break
+
+                total_api_records += len(response.items)
 
                 # For incremental sync, filter client-side (API lacks time_from param)
                 # This stops pagination early once we hit already-cached dates
@@ -684,7 +687,7 @@ class HistoricalDataStore:
 
             return SyncResult(
                 table="dividends",
-                records_fetched=len(all_dividends),
+                records_fetched=total_api_records,
                 records_added=added,
                 total_records=len(self.get_dividends()),
                 last_sync=now,
