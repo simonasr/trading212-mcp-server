@@ -2,7 +2,7 @@
 
 import sys
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -763,8 +763,6 @@ class TestCacheFreshness:
 
     def test_custom_max_age_minutes(self, data_store: HistoricalDataStore) -> None:
         """Should respect custom max_age_minutes parameter."""
-        from datetime import timedelta
-
         # Set sync time to 30 minutes ago
         thirty_min_ago = (datetime.now() - timedelta(minutes=30)).isoformat()
         data_store._update_sync_metadata("dividends", thirty_min_ago, 10)
