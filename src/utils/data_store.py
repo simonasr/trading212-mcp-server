@@ -841,16 +841,16 @@ class HistoricalDataStore:
             # Fetch transactions from API (paginated)
             all_transactions: list[HistoryTransactionItem] = []
             cursor: str | None = None
-            # pagination_time comes from API's nextPagePath and is required for
-            # cursor-based pagination to work correctly
-            pagination_time: str | None = None
+            # api_cursor_time is extracted from API's nextPagePath and is required
+            # for cursor-based pagination to work correctly
+            api_cursor_time: str | None = None
 
             while True:
                 # First request uses api_time_from (incremental filter)
-                # Subsequent requests use pagination_time from API's cursor mechanism
+                # Subsequent requests use api_cursor_time from API's cursor mechanism
                 # Falls back to api_time_from if API doesn't provide time param
                 effective_time = (
-                    pagination_time if pagination_time is not None else api_time_from
+                    api_cursor_time if api_cursor_time is not None else api_time_from
                 )
 
                 response = api_client.get_history_transactions(
@@ -883,9 +883,9 @@ class HistoricalDataStore:
                 cursor_list = params.get("cursor", [])
                 cursor = cursor_list[0] if cursor_list else None
 
-                # pagination_time is used with cursor for subsequent requests
+                # api_cursor_time is used with cursor for subsequent requests
                 time_list = params.get("time", [])
-                pagination_time = time_list[0] if time_list else None
+                api_cursor_time = time_list[0] if time_list else None
 
                 if not cursor:
                     break
