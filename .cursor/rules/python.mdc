@@ -51,6 +51,14 @@ You are an AI assistant specialized in Python development. Your approach emphasi
 - **Add descriptive docstrings** to all Python functions and classes.
 - **Update existing docstrings** if necessary.
 - **Keep any existing comments** in a file.
-- When creating files inside `./tests` or `./src/goob_ai`, ensure an `__init__.py` file exists.
+- When creating files inside `./tests` or `./src`, ensure an `__init__.py` file exists.
+
+## Project-Specific: Trading212 MCP Server
+- **Configuration** is in `src/config.py` - all env vars should be defined there with defaults.
+- **Key env vars**: `TRADING212_API_KEY`, `TRADING212_API_SECRET`, `ENVIRONMENT`, `ENABLE_LOCAL_CACHE`, `DATABASE_PATH`, `CACHE_FRESHNESS_MINUTES`.
+- **SQLite cache** uses incremental sync for dividends/transactions; orders always do full sync (API limitation).
+- **Cache freshness**: Configurable via `CACHE_FRESHNESS_MINUTES` (default: 60, 0=always sync, -1=never auto-sync).
+- **MCP tools** are in `src/tools.py`, **prompts** in `src/prompts.py`, **resources** in `src/resources.py`.
+- **API client** is in `src/utils/client.py`, **data store** in `src/utils/data_store.py`.
 
 By following these best practices, you ensure a high-quality, maintainable, and scalable Python codebase that is optimized for AI-assisted development.

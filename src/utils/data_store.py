@@ -194,7 +194,9 @@ class HistoricalDataStore:
 
         try:
             last_sync = datetime.fromisoformat(metadata["last_sync"])
-            # Ensure both datetimes are naive for comparison (we store naive local time)
+            # We always store naive local time via datetime.now().isoformat() in
+            # _update_sync_metadata, so this should always be naive. The tzinfo
+            # check is a defensive guard in case the stored format ever changes.
             if last_sync.tzinfo is not None:
                 last_sync = last_sync.replace(tzinfo=None)
             age = datetime.now() - last_sync
@@ -640,7 +642,9 @@ class HistoricalDataStore:
 
                 # For incremental sync, filter client-side (API lacks time_from param)
                 # This stops pagination early once we hit already-cached dates
-                # Use >= to include records with same timestamp (upsert handles duplicates)
+                # Use >= (not >) to include records with same timestamp as cutoff:
+                # multiple dividends from different tickers can have the same paidOn
+                # timestamp, and we don't want to miss any (upsert handles duplicates)
                 # Compare datetime objects directly (handles timezone differences)
                 if cutoff_dt:
                     new_items = [

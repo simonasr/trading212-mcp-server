@@ -255,6 +255,8 @@ The cache includes automatic freshness checking. When you access cached data:
 
 - If cache is **fresh** (synced within `CACHE_FRESHNESS_MINUTES`): Returns cached data immediately
 - If cache is **stale**: Auto-syncs from API first, then returns data
+  - **Orders**: Full sync every time (API has no time-based filtering)
+  - **Dividends/Transactions**: Incremental sync (only fetches new records since last sync)
 
 Special values for `CACHE_FRESHNESS_MINUTES`:
 - `60` (default): Cache is fresh for 1 hour

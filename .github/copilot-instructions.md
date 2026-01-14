@@ -83,6 +83,15 @@ src/
 - `DATABASE_PATH` - Path to SQLite database
 - `CACHE_FRESHNESS_MINUTES` - Auto-sync threshold (default: 60, 0=always sync, -1=never auto-sync)
 
+### SQLite Cache Behavior
+
+When cache is enabled (`ENABLE_LOCAL_CACHE=true`):
+
+- **Cache freshness**: Checked before returning cached data. Stale cache triggers auto-sync.
+- **Orders**: Always full sync (API has no time-based filtering parameter)
+- **Dividends/Transactions**: Incremental sync (only fetches new records since last sync)
+- **Force full resync**: Use `sync_historical_data(force=True)` to clear cache and re-fetch all data
+
 ## Common Tasks
 
 ### Adding a New MCP Tool
