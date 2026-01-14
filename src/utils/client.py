@@ -901,7 +901,10 @@ class Trading212Client:
         results: dict[str, SyncResult] = {}
         for table in tables_to_sync:
             if table == "orders":
-                # Orders don't support incremental sync well due to API limitations
+                # Orders API has limitations that make incremental sync unreliable:
+                # - No time-based filtering parameter for historical orders
+                # - Pagination bugs with limit > 8 cause 500 errors
+                # We always do a full sync for orders
                 results["orders"] = data_store.sync_orders(self)
             elif table == "dividends":
                 results["dividends"] = data_store.sync_dividends(
