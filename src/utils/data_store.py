@@ -839,9 +839,11 @@ class HistoricalDataStore:
             pagination_time: str | None = None
 
             while True:
-                # For first request, use api_time_from (incremental filter)
-                # For subsequent requests, use pagination_time (required by API cursor)
-                effective_time = pagination_time if cursor else api_time_from
+                # Use pagination_time if API provided it, otherwise use api_time_from
+                # This ensures we don't lose the incremental filter if API omits time
+                effective_time = (
+                    pagination_time if pagination_time is not None else api_time_from
+                )
 
                 response = api_client.get_history_transactions(
                     cursor=cursor, time_from=effective_time, limit=50
