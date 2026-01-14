@@ -834,13 +834,14 @@ class HistoricalDataStore:
             # Fetch transactions from API (paginated)
             all_transactions: list[HistoryTransactionItem] = []
             cursor: str | None = None
-            # pagination_time is separate from api_time_from to avoid changing
-            # the incremental filter during pagination
+            # pagination_time comes from API's nextPagePath and is required for
+            # cursor-based pagination to work correctly
             pagination_time: str | None = None
 
             while True:
-                # Use pagination_time if API provided it, otherwise use api_time_from
-                # This ensures we don't lose the incremental filter if API omits time
+                # First request uses api_time_from (incremental filter)
+                # Subsequent requests use pagination_time from API's cursor mechanism
+                # Falls back to api_time_from if API doesn't provide time param
                 effective_time = (
                     pagination_time if pagination_time is not None else api_time_from
                 )
