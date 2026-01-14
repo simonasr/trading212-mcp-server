@@ -598,14 +598,18 @@ class HistoricalDataStore:
         """Sync dividends from the API to the local cache.
 
         Note: The dividends API does not support server-side time filtering
-        (unlike transactions). Incremental mode uses client-side filtering:
-        pages are fetched until we encounter records older than our cache.
+        (unlike transactions). Incremental mode performs client-side filtering:
+        pages are fetched in reverse chronological order, and for each page only
+        dividends newer than the latest cached dividend are kept. If a page
+        contains a mix of new and already-cached/older dividends, all new
+        dividends from that page are included but no further pages are fetched.
         This reduces API calls when only a few new dividends exist.
 
         Args:
             api_client: Trading212 API client instance.
-            incremental: If True, stop fetching when we reach already-cached dates.
-                        If False, fetch all records (full sync).
+            incremental: If True, use the above incremental behavior and stop
+                        pagination once a page contains any already-cached dates.
+                        If False, fetch and process all available records (full sync).
 
         Returns:
             SyncResult with details about the sync operation.
