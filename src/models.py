@@ -1,21 +1,103 @@
-from typing import Optional, List, Dict
-from pydantic import BaseModel, Field
-from enum import Enum
+"""Pydantic models for Trading212 API responses and requests.
+
+This module contains all the data models used by the Trading212 API client,
+including enums for various status types and Pydantic models for API
+request/response serialization.
+"""
+
 from datetime import datetime
+from enum import Enum
+
+from pydantic import BaseModel, Field
+
+__all__ = [
+    # Enums
+    "DividendCashActionEnum",
+    "Environment",
+    "InstrumentIssueNameEnum",
+    "InstrumentIssueSeverityEnum",
+    "AccountBucketResultStatusEnum",
+    "HistoricalOrderExecutorEnum",
+    "HistoricalOrderFillTypeEnum",
+    "HistoricalOrderStatusEnum",
+    "HistoricalOrderTimeValidityEnum",
+    "HistoricalOrderTypeEnum",
+    "TaxNameEnum",
+    "HistoryTransactionTypeEnum",
+    "LimitRequestTimeValidityEnum",
+    "OrderStatusEnum",
+    "OrderStrategyEnum",
+    "OrderTypeEnum",
+    "PlaceOrderErrorCodeEnum",
+    "PositionFrontendEnum",
+    "ReportResponseStatusEnum",
+    "StopLimitRequestTimeValidityEnum",
+    "StopRequestTimeValidityEnum",
+    "TimeEventTypeEnum",
+    "TradeableInstrumentTypeEnum",
+    # Models
+    "Account",
+    "AccountBucketDetailedResponse",
+    "InstrumentIssue",
+    "InvestmentResult",
+    "AccountBucketInstrumentResult",
+    "AccountBucketInstrumentsDetailedResponse",
+    "DividendDetails",
+    "AccountBucketResultResponse",
+    "Cash",
+    "DuplicateBucketRequest",
+    "EnqueuedReportResponse",
+    "TimeEvent",
+    "WorkingSchedule",
+    "Exchange",
+    "Tax",
+    "HistoricalOrder",
+    "HistoricalOrderDetails",
+    "HistoricalOrderFill",
+    "HistoricalOrderInstrument",
+    "HistoricalOrderTax",
+    "HistoricalOrderWalletImpact",
+    "HistoryDividendItem",
+    "HistoryTransactionItem",
+    "LimitRequest",
+    "MarketRequest",
+    "Order",
+    "PaginatedResponseHistoricalOrder",
+    "PaginatedResponseHistoryDividendItem",
+    "PaginatedResponseHistoryTransactionItem",
+    "PieRequest",
+    "PlaceOrderError",
+    "Position",
+    "PositionRequest",
+    "ReportDataIncluded",
+    "PublicReportRequest",
+    "ReportResponse",
+    "StopLimitRequest",
+    "StopRequest",
+    "TradeableInstrument",
+]
 
 
 # --- ENUMS ---
+
+
 class DividendCashActionEnum(str, Enum):
+    """Action to take with dividend payments."""
+
     REINVEST = "REINVEST"
     TO_ACCOUNT_CASH = "TO_ACCOUNT_CASH"
 
 
 class Environment(str, Enum):
+    """Trading212 environment type."""
+
     DEMO = "demo"
     LIVE = "live"
 
 
 class InstrumentIssueNameEnum(str, Enum):
+    """Types of instrument issues."""
+
     DELISTED = "DELISTED"
     SUSPENDED = "SUSPENDED"
     NO_LONGER_TRADABLE = "NO_LONGER_TRADABLE"
@@ -25,18 +107,24 @@ class InstrumentIssueNameEnum(str, Enum):
 
 
 class InstrumentIssueSeverityEnum(str, Enum):
+    """Severity level of instrument issues."""
+
     IRREVERSIBLE = "IRREVERSIBLE"
     REVERSIBLE = "REVERSIBLE"
     INFORMATIVE = "INFORMATIVE"
 
 
 class AccountBucketResultStatusEnum(str, Enum):
+    """Status of pie progress towards goal."""
+
     AHEAD = "AHEAD"
     ON_TRACK = "ON_TRACK"
     BEHIND = "BEHIND"
 
 
 class HistoricalOrderExecutorEnum(str, Enum):
+    """Platform that executed the order."""
+
     API = "API"
     IOS = "IOS"
     ANDROID = "ANDROID"
@@ -46,11 +134,15 @@ class HistoricalOrderExecutorEnum(str, Enum):
 
 
 class HistoricalOrderFillTypeEnum(str, Enum):
+    """Type of order fill."""
+
     TOTV = "TOTV"
     OTC = "OTC"
 
 
 class HistoricalOrderStatusEnum(str, Enum):
+    """Status of a historical order."""
+
     LOCAL = "LOCAL"
     UNCONFIRMED = "UNCONFIRMED"
     CONFIRMED = "CONFIRMED"
@@ -65,11 +157,15 @@ class HistoricalOrderStatusEnum(str, Enum):
 
 
 class HistoricalOrderTimeValidityEnum(str, Enum):
+    """Time validity for historical orders."""
+
     DAY = "DAY"
     GOOD_TILL_CANCEL = "GOOD_TILL_CANCEL"
 
 
 class HistoricalOrderTypeEnum(str, Enum):
+    """Type of historical order."""
+
     LIMIT = "LIMIT"
     STOP = "STOP"
     MARKET = "MARKET"
@@ -77,6 +173,8 @@ class HistoricalOrderTypeEnum(str, Enum):
 
 
 class TaxNameEnum(str, Enum):
+    """Types of taxes and fees."""
+
     COMMISSION_TURNOVER = "COMMISSION_TURNOVER"
     CURRENCY_CONVERSION_FEE = "CURRENCY_CONVERSION_FEE"
     FINRA_FEE = "FINRA_FEE"
@@ -88,6 +186,8 @@ class TaxNameEnum(str, Enum):
 
 
 class HistoryTransactionTypeEnum(str, Enum):
+    """Type of account transaction."""
+
     WITHDRAW = "WITHDRAW"
     DEPOSIT = "DEPOSIT"
     FEE = "FEE"
@@ -95,11 +195,15 @@ class HistoryTransactionTypeEnum(str, Enum):
 
 
 class LimitRequestTimeValidityEnum(str, Enum):
+    """Time validity for limit orders."""
+
     DAY = "DAY"
     GOOD_TILL_CANCEL = "GOOD_TILL_CANCEL"
 
 
 class OrderStatusEnum(str, Enum):
+    """Status of an active order."""
+
     LOCAL = "LOCAL"
     UNCONFIRMED = "UNCONFIRMED"
     CONFIRMED = "CONFIRMED"
@@ -114,11 +218,15 @@ class OrderStatusEnum(str, Enum):
 
 
 class OrderStrategyEnum(str, Enum):
+    """Order execution strategy."""
+
     QUANTITY = "QUANTITY"
     VALUE = "VALUE"
 
 
 class OrderTypeEnum(str, Enum):
+    """Type of order."""
+
     LIMIT = "LIMIT"
     STOP = "STOP"
     MARKET = "MARKET"
@@ -126,6 +234,8 @@ class OrderTypeEnum(str, Enum):
 
 
 class PlaceOrderErrorCodeEnum(str, Enum):
+    """Error codes for order placement failures."""
+
     SellingEquityNotOwned = "SellingEquityNotOwned"
     CantLegalyTradeException = "CantLegalyTradeException"
     InsufficientResources = "InsufficientResources"
@@ -152,6 +262,8 @@ class PlaceOrderErrorCodeEnum(str, Enum):
 
 
 class PositionFrontendEnum(str, Enum):
+    """Platform origin of a position."""
+
     API = "API"
     IOS = "IOS"
     ANDROID = "ANDROID"
@@ -161,6 +273,8 @@ class PositionFrontendEnum(str, Enum):
 
 
 class ReportResponseStatusEnum(str, Enum):
+    """Status of a report export."""
+
     Queued = "Queued"
     Processing = "Processing"
     Running = "Running"
@@ -170,16 +284,22 @@ class ReportResponseStatusEnum(str, Enum):
 
 
 class StopLimitRequestTimeValidityEnum(str, Enum):
+    """Time validity for stop-limit orders."""
+
     DAY = "DAY"
     GOOD_TILL_CANCEL = "GOOD_TILL_CANCEL"
 
 
 class StopRequestTimeValidityEnum(str, Enum):
+    """Time validity for stop orders."""
+
     DAY = "DAY"
     GOOD_TILL_CANCEL = "GOOD_TILL_CANCEL"
 
 
 class TimeEventTypeEnum(str, Enum):
+    """Type of exchange time event."""
+
     OPEN = "OPEN"
     CLOSE = "CLOSE"
     BREAK_START = "BREAK_START"
@@ -191,6 +311,8 @@ class TimeEventTypeEnum(str, Enum):
 
 
 class TradeableInstrumentTypeEnum(str, Enum):
+    """Type of tradeable instrument."""
+
     CRYPTOCURRENCY = "CRYPTOCURRENCY"
     ETF = "ETF"
     FOREX = "FOREX"
@@ -204,152 +326,302 @@ class TradeableInstrumentTypeEnum(str, Enum):
 
 
 # --- MODELS ---
+
+
 class Account(BaseModel):
-    currencyCode: str = Field(..., min_length=3, max_length=3,
-                              description="ISO 4217", example="USD")
-    id: int
+    """Account metadata information."""
+
+    currencyCode: str = Field(
+        ...,
+        min_length=3,
+        max_length=3,
+        description="ISO 4217 currency code",
+        examples=["USD", "EUR", "GBP"],
+    )
+    id: int = Field(..., description="Account identifier")
 
 
 class AccountBucketDetailedResponse(BaseModel):
-    creationDate: Optional[datetime]
-    dividendCashAction: Optional[DividendCashActionEnum]
-    endDate: Optional[datetime]
-    goal: Optional[float]
-    icon: Optional[str]
-    id: Optional[int]
-    initialInvestment: Optional[float]
-    instrumentShares: Optional[Dict[str, float]]
-    name: Optional[str]
-    publicUrl: Optional[str]
+    """Detailed pie/bucket configuration."""
+
+    creationDate: datetime | None = None
+    dividendCashAction: DividendCashActionEnum | None = None
+    endDate: datetime | None = None
+    goal: float | None = None
+    icon: str | None = None
+    id: int | None = None
+    initialInvestment: float | None = None
+    instrumentShares: dict[str, float] | None = None
+    name: str | None = None
+    publicUrl: str | None = None
 
 
 class InstrumentIssue(BaseModel):
+    """Issue affecting an instrument."""
+
     name: InstrumentIssueNameEnum
     severity: InstrumentIssueSeverityEnum
 
 
 class InvestmentResult(BaseModel):
-    priceAvgInvestedValue: Optional[float]
-    priceAvgResult: Optional[float]
-    priceAvgResultCoef: Optional[float]
-    priceAvgValue: Optional[float]
+    """Investment performance result."""
+
+    priceAvgInvestedValue: float | None = None
+    priceAvgResult: float | None = None
+    priceAvgResultCoef: float | None = None
+    priceAvgValue: float | None = None
 
 
 class AccountBucketInstrumentResult(BaseModel):
-    currentShare: Optional[float]
-    expectedShare: Optional[float]
-    issues: Optional[List[InstrumentIssue]]
-    ownedQuantity: Optional[float]
-    result: Optional[InvestmentResult]
-    ticker: Optional[str]
+    """Instrument result within a pie."""
+
+    currentShare: float | None = None
+    expectedShare: float | None = None
+    issues: list[InstrumentIssue] | None = None
+    ownedQuantity: float | None = None
+    result: InvestmentResult | None = None
+    ticker: str | None = None
 
 
 class AccountBucketInstrumentsDetailedResponse(BaseModel):
-    instruments: Optional[List[AccountBucketInstrumentResult]]
-    settings: Optional[AccountBucketDetailedResponse]
+    """Detailed pie response with instruments."""
+
+    instruments: list[AccountBucketInstrumentResult] | None = None
+    settings: AccountBucketDetailedResponse | None = None
 
 
 class DividendDetails(BaseModel):
-    gained: Optional[float]
-    inCash: Optional[float]
-    reinvested: Optional[float]
+    """Dividend payment details."""
+
+    gained: float | None = None
+    inCash: float | None = None
+    reinvested: float | None = None
 
 
 class AccountBucketResultResponse(BaseModel):
-    cash: Optional[float]
-    dividendDetails: Optional[DividendDetails]
-    id: Optional[int]
-    progress: Optional[float]
-    result: Optional[InvestmentResult]
-    status: Optional[AccountBucketResultStatusEnum]
+    """Pie result summary."""
+
+    cash: float | None = None
+    dividendDetails: DividendDetails | None = None
+    id: int | None = None
+    progress: float | None = None
+    result: InvestmentResult | None = None
+    status: AccountBucketResultStatusEnum | None = None
 
 
 class Cash(BaseModel):
-    blocked: Optional[float]
-    free: Optional[float]
-    invested: Optional[float]
-    pieCash: Optional[float]
-    ppl: Optional[float]
-    result: Optional[float]
-    total: Optional[float]
+    """Account cash balance information."""
+
+    blocked: float | None = None
+    free: float | None = None
+    invested: float | None = None
+    pieCash: float | None = None
+    ppl: float | None = None
+    result: float | None = None
+    total: float | None = None
 
 
 class DuplicateBucketRequest(BaseModel):
-    icon: Optional[str]
-    name: Optional[str]
+    """Request to duplicate a pie."""
+
+    icon: str | None = None
+    name: str | None = None
 
 
 class EnqueuedReportResponse(BaseModel):
+    """Response when a report export is queued."""
+
     reportId: int
 
 
 class TimeEvent(BaseModel):
+    """Exchange time event."""
+
     date: datetime
     type: TimeEventTypeEnum
 
 
 class WorkingSchedule(BaseModel):
+    """Exchange working schedule."""
+
     id: int
-    timeEvents: List[TimeEvent]
+    timeEvents: list[TimeEvent]
 
 
 class Exchange(BaseModel):
+    """Exchange information with working schedules."""
+
     id: int
     name: str
-    workingSchedules: List[WorkingSchedule]
+    workingSchedules: list[WorkingSchedule]
 
 
 class Tax(BaseModel):
-    fillId: Optional[str]
-    name: Optional[TaxNameEnum]
-    quantity: Optional[float]
-    timeCharged: Optional[datetime]
+    """Tax or fee charge."""
+
+    fillId: str | None = None
+    name: TaxNameEnum | None = None
+    quantity: float | None = None
+    timeCharged: datetime | None = None
+
+
+class HistoricalOrderInstrument(BaseModel):
+    """Instrument details in historical order."""
+
+    ticker: str | None = None
+    name: str | None = None
+    isin: str | None = None
+    currency: str | None = None
+
+
+class HistoricalOrderTax(BaseModel):
+    """Tax in historical order fill."""
+
+    name: TaxNameEnum | None = None
+    quantity: float | None = None
+    currency: str | None = None
+    chargedAt: datetime | None = None
+
+
+class HistoricalOrderWalletImpact(BaseModel):
+    """Wallet impact from order fill."""
+
+    currency: str | None = None
+    netValue: float | None = None
+    realisedProfitLoss: float | None = None
+    fxRate: float | None = None
+    taxes: list[HistoricalOrderTax] | None = None
+
+
+class HistoricalOrderFill(BaseModel):
+    """Fill details for historical order."""
+
+    id: int | None = None
+    quantity: float | None = None
+    price: float | None = None
+    type: str | None = None
+    tradingMethod: str | None = None
+    filledAt: datetime | None = None
+    walletImpact: HistoricalOrderWalletImpact | None = None
+
+
+class HistoricalOrderDetails(BaseModel):
+    """Order details in historical order response."""
+
+    id: int | None = None
+    strategy: str | None = None
+    type: HistoricalOrderTypeEnum | None = None
+    ticker: str | None = None
+    quantity: float | None = None
+    filledQuantity: float | None = None
+    limitPrice: float | None = None
+    stopPrice: float | None = None
+    status: HistoricalOrderStatusEnum | None = None
+    currency: str | None = None
+    extendedHours: bool | None = None
+    initiatedFrom: HistoricalOrderExecutorEnum | None = None
+    side: str | None = None
+    createdAt: datetime | None = None
+    instrument: HistoricalOrderInstrument | None = None
 
 
 class HistoricalOrder(BaseModel):
-    dateCreated: Optional[datetime]
-    dateExecuted: Optional[datetime]
-    dateModified: Optional[datetime]
-    executor: Optional[HistoricalOrderExecutorEnum]
-    fillCost: Optional[float]
-    fillId: Optional[int]
-    fillPrice: Optional[float]
-    fillResult: Optional[float]
-    fillType: Optional[HistoricalOrderFillTypeEnum]
-    filledQuantity: Optional[float]
-    filledValue: Optional[float]
-    id: Optional[int]
-    limitPrice: Optional[float]
-    orderedQuantity: Optional[float]
-    orderedValue: Optional[float]
-    parentOrder: Optional[int]
-    status: Optional[HistoricalOrderStatusEnum]
-    stopPrice: Optional[float]
-    taxes: Optional[List[Tax]]
-    ticker: Optional[str]
-    timeValidity: Optional[HistoricalOrderTimeValidityEnum]
-    type: Optional[HistoricalOrderTypeEnum]
+    """Historical order record (API response wrapper)."""
+
+    order: HistoricalOrderDetails | None = None
+    fill: HistoricalOrderFill | None = None
+
+    @property
+    def id(self) -> int | None:
+        """Get order ID."""
+        return self.order.id if self.order else None
+
+    @property
+    def ticker(self) -> str | None:
+        """Get ticker."""
+        return self.order.ticker if self.order else None
+
+    @property
+    def status(self) -> HistoricalOrderStatusEnum | None:
+        """Get order status."""
+        return self.order.status if self.order else None
+
+    @property
+    def type(self) -> HistoricalOrderTypeEnum | None:
+        """Get order type."""
+        return self.order.type if self.order else None
+
+    @property
+    def dateCreated(self) -> datetime | None:
+        """Get creation date."""
+        return self.order.createdAt if self.order else None
+
+    @property
+    def orderedQuantity(self) -> float | None:
+        """Get ordered quantity."""
+        return self.order.quantity if self.order else None
+
+    @property
+    def filledQuantity(self) -> float | None:
+        """Get filled quantity."""
+        return self.order.filledQuantity if self.order else None
+
+    @property
+    def limitPrice(self) -> float | None:
+        """Get limit price."""
+        return self.order.limitPrice if self.order else None
+
+    @property
+    def stopPrice(self) -> float | None:
+        """Get stop price."""
+        return self.order.stopPrice if self.order else None
+
+    @property
+    def fillPrice(self) -> float | None:
+        """Get fill price."""
+        return self.fill.price if self.fill else None
+
+    @property
+    def fillId(self) -> int | None:
+        """Get fill ID."""
+        return self.fill.id if self.fill else None
+
+    @property
+    def dateExecuted(self) -> datetime | None:
+        """Get execution date."""
+        return self.fill.filledAt if self.fill else None
+
+    @property
+    def executor(self) -> HistoricalOrderExecutorEnum | None:
+        """Get executor/initiator."""
+        return self.order.initiatedFrom if self.order else None
 
 
 class HistoryDividendItem(BaseModel):
-    amount: Optional[float]
-    amountInEuro: Optional[float]
-    grossAmountPerShare: Optional[float]
-    paidOn: Optional[datetime]
-    quantity: Optional[float]
-    reference: Optional[str]
-    ticker: Optional[str]
-    type: Optional[str]
+    """Historical dividend payment."""
+
+    amount: float | None = None
+    amountInEuro: float | None = None
+    grossAmountPerShare: float | None = None
+    paidOn: datetime | None = None
+    quantity: float | None = None
+    reference: str | None = None
+    ticker: str | None = None
+    type: str | None = None
 
 
 class HistoryTransactionItem(BaseModel):
-    amount: Optional[float]
-    dateTime: Optional[datetime]
-    reference: Optional[str]
-    type: Optional[HistoryTransactionTypeEnum]
+    """Historical account transaction."""
+
+    amount: float | None = None
+    dateTime: datetime | None = None
+    reference: str | None = None
+    type: HistoryTransactionTypeEnum | None = None
 
 
 class LimitRequest(BaseModel):
+    """Request to place a limit order."""
+
     limitPrice: float
     quantity: float
     ticker: str
@@ -357,103 +629,135 @@ class LimitRequest(BaseModel):
 
 
 class MarketRequest(BaseModel):
+    """Request to place a market order."""
+
     quantity: float
     ticker: str
 
 
 class Order(BaseModel):
-    creationTime: Optional[datetime]
-    filledQuantity: Optional[float]
-    filledValue: Optional[float]
-    id: Optional[int]
-    limitPrice: Optional[float]
-    quantity: Optional[float]
-    status: Optional[OrderStatusEnum]
-    stopPrice: Optional[float]
-    strategy: Optional[OrderStrategyEnum]
-    ticker: Optional[str]
-    type: Optional[OrderTypeEnum]
-    value: Optional[float]
+    """Active order information."""
+
+    creationTime: datetime | None = None
+    filledQuantity: float | None = None
+    filledValue: float | None = None
+    id: int | None = None
+    limitPrice: float | None = None
+    quantity: float | None = None
+    status: OrderStatusEnum | None = None
+    stopPrice: float | None = None
+    strategy: OrderStrategyEnum | None = None
+    ticker: str | None = None
+    type: OrderTypeEnum | None = None
+    value: float | None = None
 
 
 class PaginatedResponseHistoricalOrder(BaseModel):
-    items: List[HistoricalOrder]
-    nextPagePath: Optional[str]
+    """Paginated response for historical orders."""
+
+    items: list[HistoricalOrder]
+    nextPagePath: str | None = None
 
 
 class PaginatedResponseHistoryDividendItem(BaseModel):
-    items: List[HistoryDividendItem]
-    nextPagePath: Optional[str]
+    """Paginated response for dividend history."""
+
+    items: list[HistoryDividendItem]
+    nextPagePath: str | None = None
 
 
 class PaginatedResponseHistoryTransactionItem(BaseModel):
-    items: List[HistoryTransactionItem]
-    nextPagePath: Optional[str]
+    """Paginated response for transaction history."""
+
+    items: list[HistoryTransactionItem]
+    nextPagePath: str | None = None
 
 
 class PieRequest(BaseModel):
-    dividendCashAction: Optional[DividendCashActionEnum] = Field(
+    """Request to create or update a pie."""
+
+    dividendCashAction: DividendCashActionEnum | None = Field(
+        default=None,
         description="How dividends are handled",
-        examples=[DividendCashActionEnum.REINVEST,
-                  DividendCashActionEnum.TO_ACCOUNT_CASH]
+        examples=[
+            DividendCashActionEnum.REINVEST,
+            DividendCashActionEnum.TO_ACCOUNT_CASH,
+        ],
     )
-    endDate: Optional[datetime] = Field(format="date-time")
-    goal: Optional[float] = Field(
-        description="Total desired value of the pie in account currency")
-    icon: Optional[str] = Field()
-    instrumentShares: Optional[Dict[str, float]] = Field(
+    endDate: datetime | None = Field(default=None)
+    goal: float | None = Field(
+        default=None,
+        description="Total desired value of the pie in account currency",
+    )
+    icon: str | None = Field(default=None)
+    instrumentShares: dict[str, float] | None = Field(
+        default=None,
         examples=[{"AAPL_US_EQ": 0.5, "MSFT_US_EQ": 0.5}],
         description="The shares of each instrument in the pie",
     )
-    name: Optional[str] = Field()
+    name: str | None = Field(default=None)
 
 
 class PlaceOrderError(BaseModel):
-    clarification: Optional[str]
-    code: Optional[PlaceOrderErrorCodeEnum]
+    """Error response when placing an order fails."""
+
+    clarification: str | None = None
+    code: PlaceOrderErrorCodeEnum | None = None
 
 
 class Position(BaseModel):
-    averagePrice: Optional[float]
-    currentPrice: Optional[float]
-    frontend: Optional[PositionFrontendEnum]
-    fxPpl: Optional[float]
-    initialFillDate: Optional[datetime]
-    maxBuy: Optional[float]
-    maxSell: Optional[float]
-    pieQuantity: Optional[float]
-    ppl: Optional[float]
-    quantity: Optional[float]
-    ticker: Optional[str]
+    """Open position information."""
+
+    averagePrice: float | None = None
+    currentPrice: float | None = None
+    frontend: PositionFrontendEnum | None = None
+    fxPpl: float | None = None
+    initialFillDate: datetime | None = None
+    maxBuy: float | None = None
+    maxSell: float | None = None
+    pieQuantity: float | None = None
+    ppl: float | None = None
+    quantity: float | None = None
+    ticker: str | None = None
 
 
 class PositionRequest(BaseModel):
+    """Request to search for a position."""
+
     ticker: str
 
 
 class ReportDataIncluded(BaseModel):
-    includeDividends: Optional[bool] = True
-    includeInterest: Optional[bool] = True
-    includeOrders: Optional[bool] = True
-    includeTransactions: Optional[bool] = True
+    """Data to include in a report export."""
+
+    includeDividends: bool | None = True
+    includeInterest: bool | None = True
+    includeOrders: bool | None = True
+    includeTransactions: bool | None = True
 
 
 class PublicReportRequest(BaseModel):
-    dataIncluded: Optional[ReportDataIncluded]
-    timeFrom: Optional[datetime]
-    timeTo: Optional[datetime]
+    """Request to generate a report export."""
+
+    dataIncluded: ReportDataIncluded | None = None
+    timeFrom: datetime | None = None
+    timeTo: datetime | None = None
 
 
 class ReportResponse(BaseModel):
-    dataIncluded: Optional[ReportDataIncluded]
-    downloadLink: Optional[str]
-    reportId: Optional[int]
-    status: Optional[ReportResponseStatusEnum]
-    timeFrom: Optional[datetime]
-    timeTo: Optional[datetime]
+    """Report export response."""
+
+    dataIncluded: ReportDataIncluded | None = None
+    downloadLink: str | None = None
+    reportId: int | None = None
+    status: ReportResponseStatusEnum | None = None
+    timeFrom: datetime | None = None
+    timeTo: datetime | None = None
 
 
 class StopLimitRequest(BaseModel):
+    """Request to place a stop-limit order."""
+
     limitPrice: float
     quantity: float
     stopPrice: float
@@ -462,6 +766,8 @@ class StopLimitRequest(BaseModel):
 
 
 class StopRequest(BaseModel):
+    """Request to place a stop order."""
+
     quantity: float
     stopPrice: float
     ticker: str
@@ -469,16 +775,18 @@ class StopRequest(BaseModel):
 
 
 class TradeableInstrument(BaseModel):
-    addedOn: Optional[datetime]
-    currencyCode: Optional[str]
-    isin: Optional[str]
-    maxOpenQuantity: Optional[float]
-    minTradeQuantity: Optional[float]
-    name: Optional[str]
-    shortName: Optional[str]
-    ticker: Optional[str]
-    type: Optional[TradeableInstrumentTypeEnum]
-    workingScheduleId: Optional[int]
+    """Tradeable instrument information."""
+
+    addedOn: datetime | None = None
+    currencyCode: str | None = None
+    isin: str | None = None
+    maxOpenQuantity: float | None = None
+    minTradeQuantity: float | None = None
+    name: str | None = None
+    shortName: str | None = None
+    ticker: str | None = None
+    type: TradeableInstrumentTypeEnum | None = None
+    workingScheduleId: int | None = None
 
 
 # Fix forward references if needed
