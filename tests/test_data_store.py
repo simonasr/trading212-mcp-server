@@ -830,3 +830,58 @@ class TestIncrementalSync:
         assert result.records_fetched == 1
         # Total should include both old and new
         assert result.total_records == 2
+
+    def test_incremental_dividends_stops_on_mixed_page(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should stop pagination when encountering a mixed page.
+
+        A mixed page contains both new dividends (after cached date) and old
+        dividends (before/equal to cached date). The sync should:
+        1. Include all new dividends from the mixed page
+        2. Stop pagination (not fetch subsequent pages)
+        """
+        # Add an existing dividend with a known date
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-EXISTING",
+            amount=5.0,
+            paidOn=datetime(2024, 3, 15, 10, 0, 0, tzinfo=UTC),
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API client returns a mixed page: 2 new + 1 old dividend
+        mock_client = MagicMock()
+        new_dividend_1 = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-NEW-1",
+            amount=10.0,
+            paidOn=datetime(2024, 6, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        new_dividend_2 = HistoryDividendItem(
+            ticker="MSFT_US_EQ",
+            reference="DIV-NEW-2",
+            amount=8.0,
+            paidOn=datetime(2024, 5, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        old_dividend = HistoryDividendItem(
+            ticker="GOOG_US_EQ",
+            reference="DIV-OLD",
+            amount=3.0,
+            paidOn=datetime(2024, 2, 1, 10, 0, 0, tzinfo=UTC),  # Before existing
+        )
+        # Page with mixed new/old dividends, has nextPagePath
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[new_dividend_1, new_dividend_2, old_dividend],
+            nextPagePath="cursor=123",  # Would have more pages
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # Should have fetched only the 2 new dividends (filtered out old)
+        assert result.records_fetched == 2
+        # Total: 1 existing + 2 new = 3
+        assert result.total_records == 3
+        # API should only be called once (pagination stopped due to old record)
+        assert mock_client.get_dividends.call_count == 1
