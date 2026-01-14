@@ -916,6 +916,10 @@ class HistoricalDataStore:
     def sync_all(self, api_client: Trading212Client) -> dict[str, SyncResult]:
         """Sync all tables from the API to the local cache.
 
+        Uses incremental sync for dividends and transactions (only fetches
+        new records since last sync). Orders always do a full sync due to
+        API limitations.
+
         Args:
             api_client: Trading212 API client instance.
 
@@ -924,8 +928,8 @@ class HistoricalDataStore:
         """
         return {
             "orders": self.sync_orders(api_client),
-            "dividends": self.sync_dividends(api_client),
-            "transactions": self.sync_transactions(api_client),
+            "dividends": self.sync_dividends(api_client, incremental=True),
+            "transactions": self.sync_transactions(api_client, incremental=True),
         }
 
     # ---- Metadata Methods ----
