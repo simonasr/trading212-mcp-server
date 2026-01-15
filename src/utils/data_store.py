@@ -11,10 +11,11 @@ import logging
 import os
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from config import CACHE_FRESHNESS_MINUTES
 from models import (
     HistoricalOrder,
     HistoryDividendItem,
@@ -38,6 +39,14 @@ logger = logging.getLogger(__name__)
 IMMUTABLE_ORDER_STATUSES: frozenset[str] = frozenset(
     {"FILLED", "CANCELLED", "REJECTED"}
 )
+
+# Valid table names and their date columns (whitelist for SQL injection prevention)
+VALID_TABLES: frozenset[str] = frozenset({"orders", "dividends", "transactions"})
+VALID_DATE_COLUMNS: dict[str, str] = {
+    "orders": "date_created",
+    "dividends": "paid_on",
+    "transactions": "datetime",
+}
 
 
 @dataclass
@@ -146,6 +155,97 @@ class HistoricalDataStore:
             self._conn.close()
             self._conn = None
 
+    # ---- Freshness Methods ----
+
+    def is_cache_fresh(
+        self,
+        table: str,
+        max_age_minutes: int | None = None,
+    ) -> bool:
+        """Check if cache is fresh enough to skip API sync.
+
+        Args:
+            table: Table name ("orders", "dividends", "transactions").
+            max_age_minutes: Maximum age in minutes for cache to be considered fresh.
+                            None = use config default (CACHE_FRESHNESS_MINUTES).
+                            0 = never fresh (always sync).
+                            -1 = always fresh (never sync automatically).
+
+        Returns:
+            True if cache is fresh (no sync needed), False otherwise.
+        """
+        if not self.enabled:
+            return False
+
+        # Use provided value or config default
+        freshness_minutes = (
+            max_age_minutes if max_age_minutes is not None else CACHE_FRESHNESS_MINUTES
+        )
+
+        # Handle special values (works for both explicit param and config default)
+        if freshness_minutes == -1:
+            return True  # Never sync automatically
+        if freshness_minutes == 0:
+            return False  # Force sync
+
+        metadata = self._get_sync_metadata(table)
+        if not metadata or not metadata.get("last_sync"):
+            return False  # Never synced
+
+        try:
+            last_sync = datetime.fromisoformat(metadata["last_sync"])
+            # We always store naive local time via datetime.now().isoformat() in
+            # _update_sync_metadata, so this should always be naive. The tzinfo
+            # check is a defensive guard in case the stored format ever changes.
+            if last_sync.tzinfo is not None:
+                last_sync = last_sync.replace(tzinfo=None)
+            age = datetime.now() - last_sync
+            is_fresh = age < timedelta(minutes=freshness_minutes)
+            if is_fresh:
+                logger.debug(
+                    "Cache for %s is fresh (age: %s, max: %d min)",
+                    table,
+                    age,
+                    freshness_minutes,
+                )
+            else:
+                logger.debug(
+                    "Cache for %s is stale (age: %s, max: %d min)",
+                    table,
+                    age,
+                    freshness_minutes,
+                )
+            return is_fresh
+        except (ValueError, TypeError) as e:
+            logger.warning("Failed to parse last_sync timestamp: %s", e)
+            return False
+
+    def _get_newest_record_date(self, table: str, date_column: str) -> str | None:
+        """Get the newest record date from a table.
+
+        Args:
+            table: Table name (must be in VALID_TABLES).
+            date_column: Column containing the date (must match VALID_DATE_COLUMNS).
+
+        Returns:
+            ISO 8601 date string of newest record, or None if empty.
+
+        Raises:
+            ValueError: If table or date_column is not in whitelist.
+        """
+        # Validate against whitelist to prevent SQL injection
+        if table not in VALID_TABLES:
+            raise ValueError(f"Invalid table: {table}")
+        if date_column != VALID_DATE_COLUMNS.get(table):
+            raise ValueError(f"Invalid date_column for {table}: {date_column}")
+
+        conn = self._get_connection()
+        row = conn.execute(
+            f"SELECT MAX({date_column}) as newest FROM {table} WHERE account_id = ?",  # noqa: S608
+            (self.account_id,),
+        ).fetchone()
+        return row["newest"] if row and row["newest"] else None
+
     # ---- Order Methods ----
 
     def get_orders(
@@ -198,7 +298,7 @@ class HistoricalDataStore:
             orders: List of orders to upsert.
 
         Returns:
-            Number of new records inserted.
+            Number of new records inserted (excludes updates to existing records).
         """
         if not orders:
             return 0
@@ -224,10 +324,12 @@ class HistoricalDataStore:
             )
 
             # Check if existing record has immutable status (immutability guard)
+            # Also used to distinguish insert vs update for accurate counting
             existing = conn.execute(
                 "SELECT status FROM orders WHERE id = ? AND account_id = ?",
                 (order.id, self.account_id),
             ).fetchone()
+            is_new = existing is None
 
             if existing:
                 existing_status = existing["status"]
@@ -308,7 +410,9 @@ class HistoricalDataStore:
                         raw_json,
                     ),
                 )
-                inserted += 1
+                # Only count true inserts, not replacements
+                if is_new:
+                    inserted += 1
             except sqlite3.IntegrityError:
                 # Record already exists with same primary key
                 logger.debug("Order %s already exists, skipping", order.id)
@@ -438,7 +542,7 @@ class HistoricalDataStore:
             dividends: List of dividends to upsert.
 
         Returns:
-            Number of new records inserted.
+            Number of new records inserted (excludes updates to existing records).
         """
         if not dividends:
             return 0
@@ -449,6 +553,13 @@ class HistoricalDataStore:
         for dividend in dividends:
             if not dividend.reference:
                 continue
+
+            # Check if record already exists (to distinguish insert vs update)
+            existing = conn.execute(
+                "SELECT 1 FROM dividends WHERE reference = ? AND account_id = ?",
+                (dividend.reference, self.account_id),
+            ).fetchone()
+            is_new = existing is None
 
             raw_json = dividend.model_dump_json()
 
@@ -473,7 +584,9 @@ class HistoricalDataStore:
                         raw_json,
                     ),
                 )
-                inserted += 1
+                # Only count true inserts, not replacements
+                if is_new:
+                    inserted += 1
             except sqlite3.IntegrityError as exc:
                 # Skip dividends that violate database integrity constraints,
                 # preserving the previous behavior of continuing with remaining items.
@@ -486,11 +599,26 @@ class HistoricalDataStore:
         conn.commit()
         return inserted
 
-    def sync_dividends(self, api_client: Trading212Client) -> SyncResult:
+    def sync_dividends(
+        self,
+        api_client: Trading212Client,
+        incremental: bool = True,
+    ) -> SyncResult:
         """Sync dividends from the API to the local cache.
+
+        Note: The dividends API does not support server-side time filtering
+        (unlike transactions). Incremental mode performs client-side filtering:
+        pages are fetched in reverse chronological order, and for each page only
+        dividends newer than the latest cached dividend are kept. If a page
+        contains a mix of new and already-cached/older dividends, all new
+        dividends from that page are included but no further pages are fetched.
+        This reduces API calls when only a few new dividends exist.
 
         Args:
             api_client: Trading212 API client instance.
+            incremental: If True, use the above incremental behavior and stop
+                        pagination once a page contains any already-cached dates.
+                        If False, fetch and process all available records (full sync).
 
         Returns:
             SyncResult with details about the sync operation.
@@ -506,8 +634,19 @@ class HistoricalDataStore:
             )
 
         try:
-            # Fetch all dividends from API (paginated)
+            # Determine cutoff datetime for incremental sync
+            # We parse to datetime for proper timezone-aware comparison
+            # (string comparison fails with different tz representations)
+            cutoff_dt: datetime | None = None
+            if incremental:
+                newest_date = self._get_newest_record_date("dividends", "paid_on")
+                if newest_date:
+                    cutoff_dt = datetime.fromisoformat(newest_date)
+                    logger.info("Incremental dividends sync from %s", newest_date)
+
+            # Fetch dividends from API (paginated)
             all_dividends: list[HistoryDividendItem] = []
+            total_api_records = 0  # Track total items retrieved from API
             cursor: int | None = None
 
             while True:
@@ -515,7 +654,42 @@ class HistoricalDataStore:
                 if not response.items:
                     break
 
-                all_dividends.extend(response.items)
+                total_api_records += len(response.items)
+
+                # For incremental sync, filter client-side (API lacks time_from param)
+                # This stops pagination early once we hit already-cached dates
+                # Use >= (not >) to include records with same timestamp as cutoff:
+                # multiple dividends from different tickers can have the same paidOn
+                # timestamp, and we don't want to miss any (upsert handles duplicates)
+                # Compare datetime objects directly (handles timezone differences)
+                if cutoff_dt:
+                    # Separate items: those with dates we can compare, those without
+                    items_with_date = [d for d in response.items if d.paidOn]
+                    items_without_date = [d for d in response.items if not d.paidOn]
+
+                    # Filter dated items to only include new ones
+                    # Note: d.paidOn is guaranteed non-None from items_with_date filter,
+                    # but mypy doesn't narrow types across list comprehensions
+                    new_dated_items = [
+                        d
+                        for d in items_with_date
+                        if d.paidOn is not None and d.paidOn >= cutoff_dt
+                    ]
+
+                    # Always include items without dates (can't determine age)
+                    # and new dated items
+                    all_dividends.extend(new_dated_items)
+                    all_dividends.extend(items_without_date)
+
+                    # Stop when we encounter older dated records (already in cache)
+                    # Only compare against items that have dates for this decision
+                    if len(new_dated_items) < len(items_with_date):
+                        logger.debug(
+                            "Reached cached records, stopping incremental sync"
+                        )
+                        break
+                else:
+                    all_dividends.extend(response.items)
 
                 # Check for next page
                 if not response.nextPagePath:
@@ -541,7 +715,7 @@ class HistoricalDataStore:
 
             return SyncResult(
                 table="dividends",
-                records_fetched=len(all_dividends),
+                records_fetched=total_api_records,
                 records_added=added,
                 total_records=len(self.get_dividends()),
                 last_sync=now,
@@ -610,7 +784,7 @@ class HistoricalDataStore:
             transactions: List of transactions to upsert.
 
         Returns:
-            Number of new records inserted.
+            Number of new records inserted (excludes updates to existing records).
         """
         if not transactions:
             return 0
@@ -621,6 +795,13 @@ class HistoricalDataStore:
         for transaction in transactions:
             if not transaction.reference:
                 continue
+
+            # Check if record already exists (to distinguish insert vs update)
+            existing = conn.execute(
+                "SELECT 1 FROM transactions WHERE reference = ? AND account_id = ?",
+                (transaction.reference, self.account_id),
+            ).fetchone()
+            is_new = existing is None
 
             raw_json = transaction.model_dump_json()
 
@@ -642,7 +823,9 @@ class HistoricalDataStore:
                         raw_json,
                     ),
                 )
-                inserted += 1
+                # Only count true inserts, not replacements
+                if is_new:
+                    inserted += 1
             except sqlite3.IntegrityError as exc:
                 # Skip transactions that violate database constraints but log for diagnostics.
                 logger.warning(
@@ -654,11 +837,20 @@ class HistoricalDataStore:
         conn.commit()
         return inserted
 
-    def sync_transactions(self, api_client: Trading212Client) -> SyncResult:
+    def sync_transactions(
+        self,
+        api_client: Trading212Client,
+        incremental: bool = True,
+    ) -> SyncResult:
         """Sync transactions from the API to the local cache.
+
+        Supports incremental sync - if cache has existing data, only fetches
+        transactions after the newest cached record.
 
         Args:
             api_client: Trading212 API client instance.
+            incremental: If True, only fetch new records since last sync.
+                        If False, fetch all records (full sync).
 
         Returns:
             SyncResult with details about the sync operation.
@@ -674,14 +866,32 @@ class HistoricalDataStore:
             )
 
         try:
-            # Fetch all transactions from API (paginated)
+            # Determine time_from for incremental sync
+            # The transactions API has a time_from parameter we can use directly
+            api_time_from: str | None = None
+            if incremental:
+                newest_date = self._get_newest_record_date("transactions", "datetime")
+                if newest_date:
+                    api_time_from = newest_date
+                    logger.info("Incremental transactions sync from %s", api_time_from)
+
+            # Fetch transactions from API (paginated)
             all_transactions: list[HistoryTransactionItem] = []
             cursor: str | None = None
-            time_from: str | None = None
+            # api_cursor_time is extracted from API's nextPagePath and is required
+            # for cursor-based pagination to work correctly
+            api_cursor_time: str | None = None
 
             while True:
+                # First request uses api_time_from (incremental filter)
+                # Subsequent requests use api_cursor_time from API's cursor mechanism
+                # Falls back to api_time_from if API doesn't provide time param
+                effective_time = (
+                    api_cursor_time if api_cursor_time is not None else api_time_from
+                )
+
                 response = api_client.get_history_transactions(
-                    cursor=cursor, time_from=time_from, limit=50
+                    cursor=cursor, time_from=effective_time, limit=50
                 )
                 if not response.items:
                     break
@@ -710,8 +920,9 @@ class HistoricalDataStore:
                 cursor_list = params.get("cursor", [])
                 cursor = cursor_list[0] if cursor_list else None
 
+                # api_cursor_time is used with cursor for subsequent requests
                 time_list = params.get("time", [])
-                time_from = time_list[0] if time_list else None
+                api_cursor_time = time_list[0] if time_list else None
 
                 if not cursor:
                     break
@@ -749,6 +960,10 @@ class HistoricalDataStore:
     def sync_all(self, api_client: Trading212Client) -> dict[str, SyncResult]:
         """Sync all tables from the API to the local cache.
 
+        Uses incremental sync for dividends and transactions (only fetches
+        new records since last sync). Orders always do a full sync due to
+        API limitations.
+
         Args:
             api_client: Trading212 API client instance.
 
@@ -757,8 +972,8 @@ class HistoricalDataStore:
         """
         return {
             "orders": self.sync_orders(api_client),
-            "dividends": self.sync_dividends(api_client),
-            "transactions": self.sync_transactions(api_client),
+            "dividends": self.sync_dividends(api_client, incremental=True),
+            "transactions": self.sync_transactions(api_client, incremental=True),
         }
 
     # ---- Metadata Methods ----
@@ -846,12 +1061,21 @@ class HistoricalDataStore:
         """Get date range coverage for a table.
 
         Args:
-            table: Table name (orders, dividends, transactions).
-            date_column: Column containing the date.
+            table: Table name (must be in VALID_TABLES).
+            date_column: Column containing the date (must match VALID_DATE_COLUMNS).
 
         Returns:
             DataCoverage with count and date range, or None if empty.
+
+        Raises:
+            ValueError: If table or date_column is not in whitelist.
         """
+        # Validate against whitelist to prevent SQL injection
+        if table not in VALID_TABLES:
+            raise ValueError(f"Invalid table: {table}")
+        if date_column != VALID_DATE_COLUMNS.get(table):
+            raise ValueError(f"Invalid date_column for {table}: {date_column}")
+
         conn = self._get_connection()
         row = conn.execute(
             f"""
@@ -861,7 +1085,7 @@ class HistoricalDataStore:
                 MAX({date_column}) as newest
             FROM {table}
             WHERE account_id = ?
-            """,
+            """,  # noqa: S608
             (self.account_id,),
         ).fetchone()
 

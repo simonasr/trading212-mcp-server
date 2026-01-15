@@ -245,8 +245,23 @@ Set the following environment variables:
 
 ```env
 ENABLE_LOCAL_CACHE=true
-DATABASE_PATH=./data/trading212.db  # Optional, this is the default
+DATABASE_PATH=./data/trading212.db     # Optional, this is the default
+CACHE_FRESHNESS_MINUTES=60             # Optional, auto-sync threshold in minutes
 ```
+
+### Cache Freshness
+
+The cache includes automatic freshness checking. When you access cached data:
+
+- If cache is **fresh** (synced within `CACHE_FRESHNESS_MINUTES`): Returns cached data immediately
+- If cache is **stale**: Auto-syncs from API first, then returns data
+  - **Orders**: Full sync every time (API has no time-based filtering)
+  - **Dividends/Transactions**: Incremental sync (only fetches new records since last sync)
+
+Special values for `CACHE_FRESHNESS_MINUTES`:
+- `60` (default): Cache is fresh for 1 hour
+- `0`: Always sync (never use stale cache)
+- `-1`: Never auto-sync (manual sync only)
 
 ### Cache Management Tools
 
@@ -280,10 +295,13 @@ clear_cache(table="dividends")
 
 ### How It Works
 
-1. When caching is enabled, the first call to `sync_historical_data` fetches all historical data from the API
-2. Subsequent syncs only fetch new records (incremental sync)
-3. Data is stored in a SQLite database at the configured path
-4. The cache is scoped by account ID, supporting multiple accounts
+1. **First sync**: Fetches all historical data from the API
+2. **Subsequent syncs**: Incremental by default - only fetches new records since last sync (for dividends/transactions)
+3. **Automatic refresh**: Cache is auto-refreshed when stale (configurable via `CACHE_FRESHNESS_MINUTES`)
+4. **Multi-account support**: Cache is scoped by account ID
+5. **Data storage**: SQLite database at the configured path
+
+> **Note**: To force a full resync (e.g., for troubleshooting or data validation), use `sync_historical_data(force=True)`. This clears the cache and fetches all records from the API.
 
 ## Development
 

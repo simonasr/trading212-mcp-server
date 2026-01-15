@@ -2,7 +2,7 @@
 
 import sys
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -317,8 +317,11 @@ class TestImmutabilityGuard:
         )
         count = data_store._upsert_orders([filled_order])
 
-        assert count == 1  # Should update
+        # count=0 because this is an update, not a new insert
+        # (records_added only counts true inserts)
+        assert count == 0
 
+        # Verify the order was actually updated
         orders = data_store.get_orders()
         assert len(orders) == 1
         assert orders[0].status == HistoricalOrderStatusEnum.FILLED
@@ -714,3 +717,314 @@ class TestSyncMetadata:
         """Should return None for nonexistent metadata."""
         metadata = data_store._get_sync_metadata("nonexistent")
         assert metadata is None
+
+
+class TestCacheFreshness:
+    """Tests for cache freshness checking."""
+
+    def test_cache_never_synced_is_not_fresh(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Cache should not be fresh if never synced."""
+        assert data_store.is_cache_fresh("orders") is False
+        assert data_store.is_cache_fresh("dividends") is False
+        assert data_store.is_cache_fresh("transactions") is False
+
+    def test_recently_synced_cache_is_fresh(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Cache should be fresh if synced recently."""
+        # Sync metadata with current timestamp
+        now = datetime.now().isoformat()
+        data_store._update_sync_metadata("orders", now, 10)
+
+        # Default freshness is 60 minutes, so recently synced should be fresh
+        assert data_store.is_cache_fresh("orders") is True
+
+    def test_max_age_zero_always_returns_false(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """max_age_minutes=0 should always return False (force sync)."""
+        now = datetime.now().isoformat()
+        data_store._update_sync_metadata("orders", now, 10)
+
+        # Even with fresh cache, max_age=0 should force sync
+        assert data_store.is_cache_fresh("orders", max_age_minutes=0) is False
+
+    def test_max_age_negative_one_always_returns_true(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """max_age_minutes=-1 should always return True (never auto-sync)."""
+        # Even without any sync metadata, -1 should return True
+        assert data_store.is_cache_fresh("orders", max_age_minutes=-1) is True
+
+    def test_disabled_store_is_never_fresh(
+        self, disabled_data_store: HistoricalDataStore
+    ) -> None:
+        """Disabled store should never be considered fresh."""
+        assert disabled_data_store.is_cache_fresh("orders") is False
+
+    def test_custom_max_age_minutes(self, data_store: HistoricalDataStore) -> None:
+        """Should respect custom max_age_minutes parameter."""
+        # Set sync time to 30 minutes ago
+        thirty_min_ago = (datetime.now() - timedelta(minutes=30)).isoformat()
+        data_store._update_sync_metadata("dividends", thirty_min_ago, 10)
+
+        # Should be fresh with 60 minute threshold
+        assert data_store.is_cache_fresh("dividends", max_age_minutes=60) is True
+
+        # Should be stale with 15 minute threshold
+        assert data_store.is_cache_fresh("dividends", max_age_minutes=15) is False
+
+
+class TestIncrementalSync:
+    """Tests for incremental sync functionality."""
+
+    def test_get_newest_record_date_empty_table(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Should return None for empty table."""
+        result = data_store._get_newest_record_date("dividends", "paid_on")
+        assert result is None
+
+    def test_get_newest_record_date_with_data(
+        self,
+        data_store: HistoricalDataStore,
+        sample_dividend: HistoryDividendItem,
+    ) -> None:
+        """Should return the newest date from table."""
+        data_store._upsert_dividends([sample_dividend])
+
+        result = data_store._get_newest_record_date("dividends", "paid_on")
+
+        # Should return the date from our sample dividend
+        assert result is not None
+
+    def test_incremental_dividends_sync_uses_time_from(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should only fetch new dividends."""
+        # First, add an existing dividend
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-OLD",
+            amount=5.0,
+            paidOn=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API client that returns new dividend
+        mock_client = MagicMock()
+        new_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-NEW",
+            amount=10.0,
+            paidOn=datetime(2024, 6, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[new_dividend],
+            nextPagePath=None,
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # Should have fetched 1 new record
+        assert result.records_fetched == 1
+        # Total should include both old and new
+        assert result.total_records == 2
+
+    def test_incremental_dividends_stops_on_mixed_page(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should stop pagination when encountering a mixed page.
+
+        A mixed page contains both new dividends (after cached date) and old
+        dividends (before/equal to cached date). The sync should:
+        1. Include all new dividends from the mixed page
+        2. Stop pagination (not fetch subsequent pages)
+        """
+        # Add an existing dividend with a known date
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-EXISTING",
+            amount=5.0,
+            paidOn=datetime(2024, 3, 15, 10, 0, 0, tzinfo=UTC),
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API client returns a mixed page: 2 new + 1 old dividend
+        mock_client = MagicMock()
+        new_dividend_1 = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-NEW-1",
+            amount=10.0,
+            paidOn=datetime(2024, 6, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        new_dividend_2 = HistoryDividendItem(
+            ticker="MSFT_US_EQ",
+            reference="DIV-NEW-2",
+            amount=8.0,
+            paidOn=datetime(2024, 5, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        old_dividend = HistoryDividendItem(
+            ticker="GOOG_US_EQ",
+            reference="DIV-OLD",
+            amount=3.0,
+            paidOn=datetime(2024, 2, 1, 10, 0, 0, tzinfo=UTC),  # Before existing
+        )
+        # Page with mixed new/old dividends, has nextPagePath
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[new_dividend_1, new_dividend_2, old_dividend],
+            nextPagePath="cursor=123",  # Would have more pages
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # records_fetched = total items retrieved from API (before filtering)
+        assert result.records_fetched == 3
+        # records_added = new records added to cache (after filtering old)
+        assert result.records_added == 2
+        # Total: 1 existing + 2 new = 3
+        assert result.total_records == 3
+        # API should only be called once (pagination stopped due to old record)
+        assert mock_client.get_dividends.call_count == 1
+
+    def test_incremental_dividends_includes_same_timestamp(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should include dividends with same timestamp as cached.
+
+        Edge case: a new dividend from a different ticker could have the exact
+        same timestamp as the newest cached dividend. We use >= comparison to
+        ensure these aren't missed (upsert handles any true duplicates).
+        """
+        # Add an existing dividend with a known timestamp
+        cached_timestamp = datetime(2024, 3, 15, 10, 0, 0, tzinfo=UTC)
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-EXISTING",
+            amount=5.0,
+            paidOn=cached_timestamp,
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API returns dividend with SAME timestamp but different ticker
+        mock_client = MagicMock()
+        same_timestamp_dividend = HistoryDividendItem(
+            ticker="MSFT_US_EQ",  # Different ticker
+            reference="DIV-SAME-TIME",
+            amount=7.0,
+            paidOn=cached_timestamp,  # Same timestamp as cached
+        )
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[same_timestamp_dividend],
+            nextPagePath=None,
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # Should include the dividend with same timestamp
+        assert result.records_fetched == 1
+        # Total: 1 existing + 1 new (same timestamp, different ticker)
+        assert result.total_records == 2
+
+    def test_incremental_dividends_handles_different_timezones(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should compare datetimes correctly across timezones.
+
+        Edge case: API might return timestamps with different timezone offsets.
+        String comparison would fail (e.g., '10:00:00Z' vs '15:00:00+05:00'),
+        but datetime comparison handles this correctly.
+        """
+        from datetime import timezone
+
+        # Add an existing dividend at 10:00 UTC
+        utc_time = datetime(2024, 3, 15, 10, 0, 0, tzinfo=UTC)
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-EXISTING",
+            amount=5.0,
+            paidOn=utc_time,
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API returns dividend at 16:00+05:00 (which is 11:00 UTC - 1 hour later)
+        mock_client = MagicMock()
+        tz_plus_5 = timezone(timedelta(hours=5))
+        different_tz_dividend = HistoryDividendItem(
+            ticker="MSFT_US_EQ",
+            reference="DIV-DIFFERENT-TZ",
+            amount=7.0,
+            # 16:00+05:00 = 11:00 UTC (1 hour after cached dividend)
+            paidOn=datetime(2024, 3, 15, 16, 0, 0, tzinfo=tz_plus_5),
+        )
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[different_tz_dividend],
+            nextPagePath=None,
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # Should include the dividend (it's newer when comparing actual time)
+        assert result.records_fetched == 1
+        assert result.total_records == 2
+
+    def test_incremental_dividends_includes_none_paid_on(
+        self, data_store: HistoricalDataStore
+    ) -> None:
+        """Incremental sync should include dividends with paidOn=None.
+
+        Edge case: Some dividends may have None paidOn dates. These should
+        always be included since we can't determine their age, and should
+        not cause premature pagination stop.
+        """
+        # Add an existing dividend with a known date
+        existing_dividend = HistoryDividendItem(
+            ticker="AAPL_US_EQ",
+            reference="DIV-EXISTING",
+            amount=5.0,
+            paidOn=datetime(2024, 3, 15, 10, 0, 0, tzinfo=UTC),
+        )
+        data_store._upsert_dividends([existing_dividend])
+
+        # Mock API returns: 1 new dated + 1 None paidOn + 1 old dated
+        mock_client = MagicMock()
+        new_dividend = HistoryDividendItem(
+            ticker="MSFT_US_EQ",
+            reference="DIV-NEW",
+            amount=10.0,
+            paidOn=datetime(2024, 6, 1, 10, 0, 0, tzinfo=UTC),
+        )
+        none_date_dividend = HistoryDividendItem(
+            ticker="GOOG_US_EQ",
+            reference="DIV-NO-DATE",
+            amount=3.0,
+            paidOn=None,  # No date!
+        )
+        old_dividend = HistoryDividendItem(
+            ticker="AMZN_US_EQ",
+            reference="DIV-OLD",
+            amount=2.0,
+            paidOn=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # Before cutoff
+        )
+        mock_client.get_dividends.return_value = PaginatedResponseHistoryDividendItem(
+            items=[new_dividend, none_date_dividend, old_dividend],
+            nextPagePath="cursor=123",
+        )
+
+        # Incremental sync
+        result = data_store.sync_dividends(mock_client, incremental=True)
+
+        # records_fetched = all 3 items from API
+        assert result.records_fetched == 3
+        # records_added = 1 new dated + 1 None date = 2 (old is filtered)
+        assert result.records_added == 2
+        # Total: 1 existing + 2 new = 3
+        assert result.total_records == 3
+        # Pagination stopped due to old dated record
+        assert mock_client.get_dividends.call_count == 1
