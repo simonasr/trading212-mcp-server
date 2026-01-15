@@ -468,19 +468,45 @@ def get_order_history(
     cursor: int | None = None,
     ticker: str | None = None,
     limit: int = 8,
+    force_refresh: bool = False,
 ) -> PaginatedResponseHistoricalOrder:
     """
     Fetch historical order data with optional pagination and filtering.
 
+    Uses local cache when available and fresh (ENABLE_LOCAL_CACHE=true).
+    When cache is enabled, returns ALL cached orders (no pagination needed).
+    Falls back to API when cache is disabled or stale.
+
+    Note: Orders always do a full sync (API has no time-based filtering).
+
     Args:
-        cursor: Pagination cursor for the next page of results.
+        cursor: Pagination cursor (only used when cache disabled).
         ticker: Optional ticker symbol to filter results.
-        limit: Maximum number of items to return. Note: Trading212 has a
-            server bug where limit > 8 causes 500 errors, so max is 8.
+        limit: Maximum items to return (only used when cache disabled).
+            Note: Trading212 has a server bug where limit > 8 causes 500 errors.
+        force_refresh: If True, sync from API before returning cached data.
 
     Returns:
         PaginatedResponseHistoricalOrder with order items and nextPagePath.
+        When using cache, nextPagePath is None (all data returned).
     """
+    from utils.data_store import data_store
+
+    # Determine max_age: 0 forces sync, None uses config default
+    max_age = 0 if force_refresh else None
+
+    # Cache-first when enabled
+    if data_store.enabled:
+        if not data_store.is_cache_fresh("orders", max_age):
+            data_store.sync_orders(client)
+
+        items = data_store.get_orders(ticker=ticker)
+        return PaginatedResponseHistoricalOrder(
+            items=items,
+            nextPagePath=None,
+        )
+
+    # Fall back to API when cache disabled
     return client.get_historical_order_data(cursor=cursor, ticker=ticker, limit=limit)
 
 
@@ -489,18 +515,42 @@ def get_dividends(
     cursor: int | None = None,
     ticker: str | None = None,
     limit: int = 20,
+    force_refresh: bool = False,
 ) -> PaginatedResponseHistoryDividendItem:
     """
     Fetch historical dividend payments with optional pagination and filtering.
 
+    Uses local cache when available and fresh (ENABLE_LOCAL_CACHE=true).
+    When cache is enabled, returns ALL cached dividends (no pagination needed).
+    Falls back to API when cache is disabled or stale.
+
     Args:
-        cursor: Pagination cursor for the next page of results.
+        cursor: Pagination cursor (only used when cache disabled).
         ticker: Optional ticker symbol to filter results.
-        limit: Maximum number of items to return (max: 50, default: 20).
+        limit: Maximum items to return (only used when cache disabled, max: 50).
+        force_refresh: If True, sync from API before returning cached data.
 
     Returns:
         PaginatedResponseHistoryDividendItem with dividend items and pagination info.
+        When using cache, nextPagePath is None (all data returned).
     """
+    from utils.data_store import data_store
+
+    # Determine max_age: 0 forces sync, None uses config default
+    max_age = 0 if force_refresh else None
+
+    # Cache-first when enabled
+    if data_store.enabled:
+        if not data_store.is_cache_fresh("dividends", max_age):
+            data_store.sync_dividends(client, incremental=True)
+
+        items = data_store.get_dividends(ticker=ticker)
+        return PaginatedResponseHistoryDividendItem(
+            items=items,
+            nextPagePath=None,
+        )
+
+    # Fall back to API when cache disabled
     return client.get_dividends(cursor=cursor, ticker=ticker, limit=limit)
 
 
@@ -556,18 +606,42 @@ def get_transactions(
     cursor: str | None = None,
     time_from: str | None = None,
     limit: int = 20,
+    force_refresh: bool = False,
 ) -> PaginatedResponseHistoryTransactionItem:
     """
     Fetch account transaction history (deposits, withdrawals, fees, transfers).
 
+    Uses local cache when available and fresh (ENABLE_LOCAL_CACHE=true).
+    When cache is enabled, returns ALL cached transactions (no pagination needed).
+    Falls back to API when cache is disabled or stale.
+
     Args:
-        cursor: Pagination cursor for the next page of results.
-        time_from: Retrieve transactions starting from this time (ISO 8601 format).
-        limit: Maximum number of items to return (max: 50, default: 20).
+        cursor: Pagination cursor (only used when cache disabled).
+        time_from: Filter transactions starting from this time (ISO 8601 format).
+        limit: Maximum items to return (only used when cache disabled, max: 50).
+        force_refresh: If True, sync from API before returning cached data.
 
     Returns:
         PaginatedResponseHistoryTransactionItem with transaction items and pagination.
+        When using cache, nextPagePath is None (all data returned).
     """
+    from utils.data_store import data_store
+
+    # Determine max_age: 0 forces sync, None uses config default
+    max_age = 0 if force_refresh else None
+
+    # Cache-first when enabled
+    if data_store.enabled:
+        if not data_store.is_cache_fresh("transactions", max_age):
+            data_store.sync_transactions(client, incremental=True)
+
+        items = data_store.get_transactions(time_from=time_from)
+        return PaginatedResponseHistoryTransactionItem(
+            items=items,
+            nextPagePath=None,
+        )
+
+    # Fall back to API when cache disabled
     return client.get_history_transactions(
         cursor=cursor, time_from=time_from, limit=limit
     )
