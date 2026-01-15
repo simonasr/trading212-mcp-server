@@ -475,7 +475,8 @@ def get_order_history(
 
     Uses local cache when available and fresh (ENABLE_LOCAL_CACHE=true).
     When cache is enabled, returns ALL cached orders (no pagination needed).
-    Falls back to API when cache is disabled or stale.
+    When cache is stale, syncs from API first before returning cached data.
+    Falls back to direct API calls only when cache is disabled.
 
     Note: Orders always do a full sync (API has no time-based filtering).
 
@@ -521,7 +522,8 @@ def get_dividends(
 
     Uses local cache when available and fresh (ENABLE_LOCAL_CACHE=true).
     When cache is enabled, returns ALL cached dividends (no pagination needed).
-    Falls back to API when cache is disabled or stale.
+    When cache is stale, syncs from API first before returning cached data.
+    Falls back to direct API calls only when cache is disabled.
 
     Args:
         cursor: Pagination cursor (only used when cache disabled).
@@ -611,7 +613,8 @@ def get_transactions(
 
     Uses local cache when available and fresh (ENABLE_LOCAL_CACHE=true).
     When cache is enabled, returns ALL cached transactions (no pagination needed).
-    Falls back to API when cache is disabled or stale.
+    When cache is stale, syncs from API first before returning cached data.
+    Falls back to direct API calls only when cache is disabled.
 
     Args:
         cursor: Pagination cursor (only used when cache disabled).
