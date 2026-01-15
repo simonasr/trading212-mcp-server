@@ -374,7 +374,7 @@ class TestCacheFirstBehavior:
             mock_client._get_data_store.return_value = mock_data_store
             from tools import get_order_history
 
-            result = get_order_history()
+            get_order_history()
 
         mock_data_store.sync_orders.assert_called_once_with(mock_client)
 
@@ -445,7 +445,7 @@ class TestCacheFirstBehavior:
             mock_client._get_data_store.return_value = mock_data_store
             from tools import get_transactions
 
-            result = get_transactions()
+            get_transactions()
 
         mock_data_store.sync_transactions.assert_called_once_with(
             mock_client, incremental=True
