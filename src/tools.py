@@ -490,13 +490,12 @@ def get_order_history(
         PaginatedResponseHistoricalOrder with order items and nextPagePath.
         When using cache, nextPagePath is None (all data returned).
     """
-    from utils.data_store import data_store
-
     # Determine max_age: 0 forces sync, None uses config default
     max_age = 0 if force_refresh else None
 
     # Cache-first when enabled
-    if data_store.enabled:
+    data_store = client._get_data_store()
+    if data_store and data_store.enabled:
         if not data_store.is_cache_fresh("orders", max_age):
             data_store.sync_orders(client)
 
@@ -534,13 +533,12 @@ def get_dividends(
         PaginatedResponseHistoryDividendItem with dividend items and pagination info.
         When using cache, nextPagePath is None (all data returned).
     """
-    from utils.data_store import data_store
-
     # Determine max_age: 0 forces sync, None uses config default
     max_age = 0 if force_refresh else None
 
     # Cache-first when enabled
-    if data_store.enabled:
+    data_store = client._get_data_store()
+    if data_store and data_store.enabled:
         if not data_store.is_cache_fresh("dividends", max_age):
             data_store.sync_dividends(client, incremental=True)
 
@@ -625,13 +623,12 @@ def get_transactions(
         PaginatedResponseHistoryTransactionItem with transaction items and pagination.
         When using cache, nextPagePath is None (all data returned).
     """
-    from utils.data_store import data_store
-
     # Determine max_age: 0 forces sync, None uses config default
     max_age = 0 if force_refresh else None
 
     # Cache-first when enabled
-    if data_store.enabled:
+    data_store = client._get_data_store()
+    if data_store and data_store.enabled:
         if not data_store.is_cache_fresh("transactions", max_age):
             data_store.sync_transactions(client, incremental=True)
 
