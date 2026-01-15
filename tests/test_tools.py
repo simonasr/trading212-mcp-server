@@ -382,6 +382,28 @@ class TestCacheFirstBehavior:
 
         mock_data_store.sync_orders.assert_called_once_with(mock_client)
 
+    def test_get_order_history_force_refresh_syncs_even_when_fresh(
+        self, mock_data_store: MagicMock, sample_orders: list[HistoricalOrder]
+    ) -> None:
+        """Should sync when force_refresh=True even if cache is fresh."""
+        mock_data_store.is_cache_fresh.return_value = False
+        mock_data_store.get_orders.return_value = sample_orders
+
+        if "tools" in sys.modules:
+            del sys.modules["tools"]
+        if "mcp_server" in sys.modules:
+            del sys.modules["mcp_server"]
+
+        with patch("mcp_server.client") as mock_client:
+            mock_client._get_data_store.return_value = mock_data_store
+            from tools import get_order_history
+
+            result = get_order_history(force_refresh=True)
+
+        assert isinstance(result, PaginatedResponseHistoricalOrder)
+        mock_data_store.is_cache_fresh.assert_called_once_with("orders", 0)
+        mock_data_store.sync_orders.assert_called_once()
+
     def test_get_order_history_falls_back_to_api_when_cache_disabled(self) -> None:
         """Should call API directly when cache is disabled."""
         if "tools" in sys.modules:
@@ -455,6 +477,30 @@ class TestCacheFirstBehavior:
         mock_data_store.sync_transactions.assert_called_once_with(
             mock_client, incremental=True
         )
+
+    def test_get_transactions_force_refresh_syncs_even_when_fresh(
+        self,
+        mock_data_store: MagicMock,
+        sample_transactions: list[HistoryTransactionItem],
+    ) -> None:
+        """Should sync when force_refresh=True even if cache is fresh."""
+        mock_data_store.is_cache_fresh.return_value = False
+        mock_data_store.get_transactions.return_value = sample_transactions
+
+        if "tools" in sys.modules:
+            del sys.modules["tools"]
+        if "mcp_server" in sys.modules:
+            del sys.modules["mcp_server"]
+
+        with patch("mcp_server.client") as mock_client:
+            mock_client._get_data_store.return_value = mock_data_store
+            from tools import get_transactions
+
+            result = get_transactions(force_refresh=True)
+
+        assert isinstance(result, PaginatedResponseHistoryTransactionItem)
+        mock_data_store.is_cache_fresh.assert_called_once_with("transactions", 0)
+        mock_data_store.sync_transactions.assert_called_once()
 
     def test_get_transactions_falls_back_to_api_when_cache_disabled(self) -> None:
         """Should call API directly when cache is disabled."""
