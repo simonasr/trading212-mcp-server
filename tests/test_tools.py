@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from models import (
     HistoricalOrder,
+    HistoricalOrderDetails,
     HistoryDividendItem,
     HistoryTransactionItem,
     PaginatedResponseHistoricalOrder,
@@ -208,10 +209,12 @@ class TestCacheFirstBehavior:
         """Sample orders for testing."""
         return [
             HistoricalOrder(
-                id=1,
-                ticker="AAPL_US_EQ",
-                quantity=10.0,
-                filledQuantity=10.0,
+                order=HistoricalOrderDetails(
+                    id=1,
+                    ticker="AAPL_US_EQ",
+                    quantity=10.0,
+                    filledQuantity=10.0,
+                ),
             ),
         ]
 
@@ -356,6 +359,7 @@ class TestCacheFirstBehavior:
         assert isinstance(result, PaginatedResponseHistoricalOrder)
         assert result.items == sample_orders
         assert result.nextPagePath is None
+        mock_data_store.is_cache_fresh.assert_called_once_with("orders", None)
         mock_data_store.sync_orders.assert_not_called()
 
     def test_get_order_history_syncs_when_stale(
@@ -425,6 +429,7 @@ class TestCacheFirstBehavior:
         assert isinstance(result, PaginatedResponseHistoryTransactionItem)
         assert result.items == sample_transactions
         assert result.nextPagePath is None
+        mock_data_store.is_cache_fresh.assert_called_once_with("transactions", None)
         mock_data_store.sync_transactions.assert_not_called()
 
     def test_get_transactions_syncs_when_stale(
