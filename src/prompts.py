@@ -25,7 +25,7 @@ def analyse_trading212_data_prompt() -> str:
     Generate a prompt for analyzing Trading212 data.
 
     This prompt provides context for professional financial analysis, including
-    the account's currency for proper value interpretation.
+    the account's currency and cash summary for accurate totals.
 
     Returns:
         A prompt string with financial analysis context.
@@ -33,8 +33,16 @@ def analyse_trading212_data_prompt() -> str:
     base_prompt = dedent(
         """You are a professional financial expert analysing the user's
         financial data using Trading212. You should be extremely cautious when
-        giving financial advice. Use the currency from the account info if the
-        currency of the instrument is not given.
+        giving financial advice.
+
+        IMPORTANT: Always use get_account_cash for accurate portfolio totals.
+        Do NOT manually calculate totals from positions - use the API values:
+        - invested: Total amount invested
+        - ppl: Unrealized profit/loss
+        - result: Realized profit/loss
+        - total: Total portfolio value
+        - free: Available cash
+        - blocked: Cash blocked for pending orders
 
         Special currency codes:
         GBX represents pence (p) which is 1/100 of a British Pound Sterling (GBP)
@@ -43,14 +51,23 @@ def analyse_trading212_data_prompt() -> str:
 
     try:
         account_info = client.get_account_info()
+        account_cash = client.get_account_cash()
         return dedent(
             f"""
             {base_prompt}
-            Currency: {account_info.currencyCode}
+
+            Account Summary:
+            - Currency: {account_info.currencyCode}
+            - Total Value: {account_cash.total:.2f} {account_info.currencyCode}
+            - Invested: {account_cash.invested:.2f} {account_info.currencyCode}
+            - Unrealized P/L: {account_cash.ppl:.2f} {account_info.currencyCode}
+            - Realized P/L: {account_cash.result:.2f} {account_info.currencyCode}
+            - Free Cash: {account_cash.free:.2f} {account_info.currencyCode}
+            - Blocked Cash: {account_cash.blocked:.2f} {account_info.currencyCode}
             """
         )
     except Exception as e:
-        logger.warning("Failed to fetch account info for prompt: %s", e)
+        logger.warning("Failed to fetch account data for prompt: %s", e)
         return base_prompt
 
 
@@ -67,18 +84,24 @@ def dividend_income_analysis_prompt() -> str:
     """
     try:
         account_info = client.get_account_info()
+        account_cash = client.get_account_cash()
         currency = account_info.currencyCode
+        portfolio_value = f"{account_cash.total:.2f} {currency}"
     except Exception as e:
-        logger.warning("Failed to fetch account info for dividend prompt: %s", e)
+        logger.warning("Failed to fetch account data for dividend prompt: %s", e)
         currency = "unknown"
+        portfolio_value = "unknown"
 
     return dedent(f"""
         You are a dividend income specialist analyzing the user's Trading212 portfolio.
         Account currency: {currency}
+        Total portfolio value: {portfolio_value}
+
+        IMPORTANT: Use get_dividends to fetch dividend history for analysis.
 
         Please analyze:
         1. Total dividend income received (monthly, quarterly, annually)
-        2. Current portfolio dividend yield
+        2. Current portfolio dividend yield (dividends / portfolio value)
         3. Top dividend-paying holdings
         4. Project next 12 months of expected dividend income
         5. Identify any dividend cuts or increases in holdings
@@ -105,14 +128,22 @@ def portfolio_risk_assessment_prompt() -> str:
     """
     try:
         account_info = client.get_account_info()
+        account_cash = client.get_account_cash()
         currency = account_info.currencyCode
+        total_value = account_cash.total
     except Exception as e:
-        logger.warning("Failed to fetch account info for risk prompt: %s", e)
+        logger.warning("Failed to fetch account data for risk prompt: %s", e)
         currency = "unknown"
+        total_value = None
+
+    total_str = f"{total_value:.2f} {currency}" if total_value else "unknown"
 
     return dedent(f"""
         You are a risk analyst evaluating the user's Trading212 portfolio.
         Account currency: {currency}
+        Total portfolio value: {total_str}
+
+        IMPORTANT: Use get_positions for holdings and get_account_cash for totals.
 
         Please analyze:
         1. **Concentration Risk**: Identify positions >10% of portfolio value
@@ -143,14 +174,22 @@ def open_orders_review_prompt() -> str:
     """
     try:
         account_info = client.get_account_info()
+        account_cash = client.get_account_cash()
         currency = account_info.currencyCode
+        blocked = account_cash.blocked
     except Exception as e:
-        logger.warning("Failed to fetch account info for orders prompt: %s", e)
+        logger.warning("Failed to fetch account data for orders prompt: %s", e)
         currency = "unknown"
+        blocked = None
+
+    blocked_str = f"{blocked:.2f} {currency}" if blocked else "unknown"
 
     return dedent(f"""
         You are a trading analyst reviewing the user's open/pending orders on Trading212.
         Account currency: {currency}
+        Blocked cash (for pending orders): {blocked_str}
+
+        IMPORTANT: Use get_orders to fetch open orders and get_positions for context.
 
         Fetch and analyze ALL open orders against current positions and prices.
 
