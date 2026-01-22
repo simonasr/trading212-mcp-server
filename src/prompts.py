@@ -46,6 +46,17 @@ def analyse_trading212_data_prompt() -> str:
         - free: Available cash
         - blocked: Cash blocked for pending orders
 
+        Please analyze:
+        1. **Portfolio Overview**: Total value, invested amount, cash position
+        2. **Performance Summary**: Unrealized P/L, realized P/L, overall return %
+        3. **Top Performers**: Identify best 5 positions by P/L
+        4. **Worst Performers**: Identify worst 5 positions by P/L
+        5. **Position Analysis**: Total holdings count and diversification assessment
+        6. **Cash Utilization**: Is cash level appropriate or should it be deployed?
+        7. **Key Recommendations**: 2-3 actionable suggestions to improve the portfolio
+
+        Use get_positions for holdings data and get_account_cash for totals.
+
         Special currency codes:
         GBX represents pence (p) which is 1/100 of a British Pound Sterling (GBP)
         """
@@ -108,6 +119,11 @@ def dividend_income_analysis_prompt() -> str:
         4. Project next 12 months of expected dividend income
         5. Identify any dividend cuts or increases in holdings
         6. Suggest improvements for income optimization
+
+        Use **web search** to verify dividend sustainability for top holdings:
+        - Payout ratio and cash flow coverage
+        - Recent dividend announcements or cuts
+        - Upcoming ex-dividend dates
 
         Use the dividend history, positions, and account data to provide actionable insights.
         Be conservative with projections - past dividends don't guarantee future payments.
@@ -245,18 +261,33 @@ def evaluate_ticker_prompt(ticker: str) -> str:
         A prompt string with ticker evaluation context and instructions.
     """
     # Search for the instrument to validate it exists
+    # Priority: exact match > _US_EQ suffix > other exact > partial match
     instruments = client.get_instruments()
-    matching = [
-        i for i in instruments
-        if i.ticker and ticker.upper() in i.ticker.upper()
-    ]
+    ticker_upper = ticker.upper()
 
-    # Find exact match or best match
+    # Try exact match first
     exact_match = next(
-        (i for i in matching if i.ticker and i.ticker.upper() == ticker.upper()),
+        (i for i in instruments if i.ticker and i.ticker.upper() == ticker_upper),
         None
     )
-    instrument = exact_match or (matching[0] if matching else None)
+
+    # Try with _US_EQ suffix (most common for US stocks)
+    us_match = next(
+        (i for i in instruments if i.ticker and i.ticker.upper() == f"{ticker_upper}_US_EQ"),
+        None
+    )
+
+    # Fallback to partial matches
+    partial_matches = [
+        i for i in instruments
+        if i.ticker and ticker_upper in i.ticker.upper()
+    ]
+
+    # Select best match: exact > US > first partial
+    instrument = exact_match or us_match or (partial_matches[0] if partial_matches else None)
+
+    # For display, also collect similar tickers if no exact match
+    matching = partial_matches if not (exact_match or us_match) else []
 
     # Build instrument info section
     if instrument:
@@ -290,11 +321,21 @@ def evaluate_ticker_prompt(ticker: str) -> str:
 
         holdings_text = "\n".join(holdings_summary) if holdings_summary else "No positions"
 
-        # Check if already held
+        # Check if already held (same priority: exact > _US_EQ > partial)
         already_held = next(
-            (p for p in positions if p.ticker and ticker.upper() in p.ticker.upper()),
+            (p for p in positions if p.ticker and p.ticker.upper() == ticker_upper),
             None
         )
+        if not already_held:
+            already_held = next(
+                (p for p in positions if p.ticker and p.ticker.upper() == f"{ticker_upper}_US_EQ"),
+                None
+            )
+        if not already_held:
+            already_held = next(
+                (p for p in positions if p.ticker and ticker_upper in p.ticker.upper()),
+                None
+            )
         if already_held:
             held_info = dedent(f"""
                 NOTE: You already hold this ticker!
@@ -390,10 +431,28 @@ def review_position_prompt(ticker: str) -> str:
         return f"Error: Could not fetch account data. {e}"
 
     # Find the position
+    # Priority: exact match > _US_EQ suffix > partial match
+    ticker_upper = ticker.upper()
+
+    # Try exact match first
     position = next(
-        (p for p in positions if p.ticker and ticker.upper() in p.ticker.upper()),
+        (p for p in positions if p.ticker and p.ticker.upper() == ticker_upper),
         None
     )
+
+    # Try with _US_EQ suffix
+    if not position:
+        position = next(
+            (p for p in positions if p.ticker and p.ticker.upper() == f"{ticker_upper}_US_EQ"),
+            None
+        )
+
+    # Fallback to partial match
+    if not position:
+        position = next(
+            (p for p in positions if p.ticker and ticker_upper in p.ticker.upper()),
+            None
+        )
 
     if not position:
         # List similar positions if not found
